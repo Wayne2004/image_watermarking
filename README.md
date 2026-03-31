@@ -80,6 +80,7 @@ Combines DCT and DWT to achieve a better balance between robustness and impercep
 ## 🏗️ Project Structure
 ```bash
 ├── src/
+│ ├── main.py
 │ ├── dct/
 │ ├── dwt/
 │ ├── hybrid/
@@ -111,3 +112,9 @@ git clone https://github.com/Wayne2004/image_watermarking.git
 cd image_watermarking
 
 pip install -r requirements.txt
+```
+
+## ⚡ Execution
+```bash
+python src/main.py
+```

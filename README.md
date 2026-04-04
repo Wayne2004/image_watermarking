@@ -79,27 +79,36 @@ Combines DCT and DWT to achieve a better balance between robustness and impercep
 
 ## 🏗️ Project Structure
 ```bash
+image_watermarking/
 ├── src/
-│ ├── main.py
-│ ├── dct/
-│ ├── dwt/
-│ ├── hybrid/
-│ ├── attacks/
-│ └── evaluation/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── attacks/
+│   │   ├── __init__.py
+│   │   └── attacks.py
+│   ├── dct/
+│   ├── dwt/
+│   ├── evaluation/
+│   │   ├── __init__.py
+│   │   └── evaluation.py
+│   └── hybrid/
 │
 ├── assets/
-│ ├── input_images/
-│ └── watermarks/
+│   ├── input_images/
+│   ├── watermarked_images/
+│   └── watermarks/
 │
 ├── results/
-│ ├── images/
-│ └── metrics/
+│   ├── attack_results/
+│   └── extracted_attacked_watermarks/
 │
 ├── notebooks/
-│ └── experiments.ipynb
 │
+├── examples.py
+├── requirements.txt
 ├── README.md
-└── requirements.txt
+├── LICENSE
+└── .gitignore
 ```
 
 

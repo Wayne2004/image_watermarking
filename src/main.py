@@ -6,10 +6,13 @@ Interactive command-line interface for watermarking, attacks, and evaluation
 from rich.console import Console
 from rich.prompt import Prompt
 from rich.table import Table
+from rich.panel import Panel
+from rich.text import Text
 from pathlib import Path
 import cv2
 import os
 import questionary
+from questionary import Style
 
 from attacks import (
     jpeg_compression,
@@ -28,8 +31,23 @@ from evaluation import (
 console = Console()
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 INPUT_IMAGES_DIR = PROJECT_ROOT / "assets" / "input_images"
+WATERMARKED_IMAGES_DIR = PROJECT_ROOT / "assets" / "watermarked_images"
 WATERMARKS_DIR = PROJECT_ROOT / "assets" / "watermarks"
+RESULTS_DIR = PROJECT_ROOT / "results"
+ATTACK_RESULTS_DIR = RESULTS_DIR / "attack_results"
+EXTRACTED_ATTACKED_WATERMARKS_DIR = RESULTS_DIR / "extracted_attacked_watermarks"
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
+
+SELECT_STYLE = Style(
+    [
+        ("question", "bold #8ecae6"),
+        ("answer", "bold #90be6d"),
+        ("pointer", "bold #ffb703"),
+        ("highlighted", "bold #fb8500"),
+        ("selected", "#90be6d"),
+        ("instruction", "#6c757d"),
+    ]
+)
 
 ATTACK_METHODS = {
     "1": {"name": "JPEG Compression", "func": jpeg_compression},
@@ -43,7 +61,6 @@ EVALUATION_METHODS = {
     "1": "PSNR (Peak Signal-to-Noise Ratio)",
     "2": "SSIM (Structural Similarity Index)",
     "3": "BER (Bit Error Rate)",
-    "4": "Full Robustness Evaluation",
 }
 
 
@@ -52,14 +69,26 @@ def clear_screen():
     os.system("cls")
 
 
+def render_shell(title, subtitle=None):
+    """Render a modern header panel for each screen."""
+    header_text = Text(title, style="bold #8ecae6")
+    if subtitle:
+        header_text.append("\n")
+        header_text.append(subtitle, style="#adb5bd")
+    console.print(Panel(header_text, border_style="#219ebc", padding=(1, 2)))
+
+
 def select_from_menu(title, options):
     """Arrow-key menu selection using up/down and Enter."""
     clear_screen()
-    console.print(title)
+    render_shell(title, "Use Up/Down keys and press Enter")
     choice = questionary.select(
-        "Use ↑/↓ and Enter:",
+        "Select an option",
         choices=[questionary.Choice(label, value=value) for label, value in options],
         use_shortcuts=False,
+        qmark="",
+        pointer=">",
+        style=SELECT_STYLE,
     ).ask()
     return choice
 
@@ -90,11 +119,11 @@ def select_image_from_directory(directory, title):
 def display_menu():
     """Display main menu"""
     return select_from_menu(
-        "\n[bold cyan]Image Watermarking Framework CLI[/bold cyan]\n",
+        "Watermark Studio CLI",
         [
             ("Embed Watermark", "1"),
             ("Apply Attack", "2"),
-            ("Evaluate Image Quality", "3"),
+            ("Evaluate Watermark", "3"),
             ("Exit", "4"),
         ],
     )
@@ -104,7 +133,7 @@ def select_input_image():
     """Let user select an input image"""
     image_path = select_image_from_directory(
         INPUT_IMAGES_DIR,
-        "\n[bold]Input Image Selection[/bold]\n",
+        "Choose Input Image",
     )
     if not image_path:
         return None
@@ -128,7 +157,7 @@ def select_input_image():
 def select_watermark():
     """Let user select watermark type and source"""
     watermark_type = select_from_menu(
-        "\n[bold]Watermark Selection[/bold]\n",
+        "Choose Watermark Type",
         [
             ("Image watermark", "1"),
             ("Text watermark", "2"),
@@ -138,7 +167,7 @@ def select_watermark():
     if watermark_type == "1":
         watermark_path = select_image_from_directory(
             WATERMARKS_DIR,
-            "\n[bold]Watermark Image Selection[/bold]\n",
+            "Choose Watermark Image",
         )
         if not watermark_path:
             return None
@@ -153,6 +182,7 @@ def select_watermark():
 def embed_watermark():
     """Embed watermark (not implemented yet)"""
     clear_screen()
+    render_shell("Embed Watermark", "Configuration preview")
     console.print("\n[bold yellow]>> Watermark embedding is not yet implemented[/bold yellow]")
     console.print("[dim]This feature will be available in a future update.[/dim]\n")
     
@@ -173,14 +203,17 @@ def embed_watermark():
 
 def apply_attack():
     """Apply attack method to image"""
-    image_path = select_input_image()
+    image_path = select_image_from_directory(
+        WATERMARKED_IMAGES_DIR,
+        "Choose Watermarked Image",
+    )
     if not image_path:
         return
     
     image = cv2.imread(image_path)
     
     choice = select_from_menu(
-        "\n[bold]Select Attack Method[/bold]\n",
+        "Choose Attack Method",
         [(attack["name"], key) for key, attack in ATTACK_METHODS.items()],
     )
     selected_attack = ATTACK_METHODS[choice]
@@ -201,15 +234,48 @@ def apply_attack():
                 kernel_size += 1
             attacked_image = selected_attack["func"](image, kernel_size=kernel_size)
         elif choice == "4":  # Cropping
-            percentage = float(Prompt.ask("Crop percentage (0-1)", default="0.1"))
-            attacked_image = selected_attack["func"](image, percentage=percentage)
+            height, width = image.shape[:2]
+            crop_mode = select_from_menu(
+                "Choose Cropping Mode",
+                [
+                    ("Crop by percentage", "percentage"),
+                    ("Crop specific region", "region"),
+                ],
+            )
+
+            if crop_mode == "percentage":
+                percentage = float(Prompt.ask("Crop percentage (0-0.5)", default="0.1"))
+                attacked_image = selected_attack["func"](image, percentage=percentage)
+            else:
+                console.print(f"[dim]Image size: width={width}, height={height}[/dim]")
+                x_start = int(Prompt.ask("x_start", default="0"))
+                y_start = int(Prompt.ask("y_start", default="0"))
+                x_end = int(Prompt.ask("x_end", default=str(width)))
+                y_end = int(Prompt.ask("y_end", default=str(height)))
+
+                if x_end <= x_start or y_end <= y_start:
+                    raise ValueError("Invalid crop region: x_end must be > x_start and y_end must be > y_start")
+
+                attacked_image = selected_attack["func"](
+                    image,
+                    crop_box=(x_start, y_start, x_end, y_end),
+                )
+
+                if attacked_image.size == 0:
+                    raise ValueError("Crop region produced an empty image. Please choose a larger region.")
         elif choice == "5":  # Scaling
             scale = float(Prompt.ask("Scale factor", default="0.5"))
             attacked_image = selected_attack["func"](image, scale_factor=scale)
         
-        # Save attacked image
-        output_path = f"attacked_{os.path.basename(image_path)}"
-        cv2.imwrite(output_path, attacked_image)
+        # Save attacked image to results/attack_results; JPEG attack is exported as .jpg.
+        ATTACK_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        source_name = Path(image_path).stem
+        attack_name = selected_attack["name"].lower().replace(" ", "_")
+        output_extension = ".jpg" if choice == "1" else Path(image_path).suffix.lower()
+        if not output_extension:
+            output_extension = ".png"
+        output_path = ATTACK_RESULTS_DIR / f"attacked_{attack_name}_{source_name}{output_extension}"
+        cv2.imwrite(str(output_path), attacked_image)
         console.print(f"[green]OK Attack applied and saved to {output_path}[/green]\n")
     except Exception as e:
         console.print(f"[bold red]X Error applying attack: {e}[/bold red]\n")
@@ -217,50 +283,82 @@ def apply_attack():
     Prompt.ask("Press Enter to continue")
 
 
-def evaluate_quality():
-    """Evaluate image quality"""
-    original_path = select_image_from_directory(
-        INPUT_IMAGES_DIR,
-        "\n[bold]Select Original Image[/bold]\n",
-    )
-    if not original_path:
-        return
-
-    attacked_path = select_image_from_directory(
-        INPUT_IMAGES_DIR,
-        "\n[bold]Select Attacked/Degraded Image[/bold]\n",
-    )
-    if not attacked_path:
-        return
-    
-    original = cv2.imread(original_path)
-    attacked = cv2.imread(attacked_path)
-    
+def evaluate_watermark():
+    """Evaluate watermark robustness metrics."""
     choice = select_from_menu(
-        "\n[bold]Select Evaluation Method[/bold]\n",
+        "Choose Evaluation Method",
         [(method, key) for key, method in EVALUATION_METHODS.items()],
     )
     
     console.print("\n[cyan]Computing metrics...[/cyan]")
     
     try:
+        clear_screen()
+        render_shell("Evaluate Watermark", "Computed robustness metrics")
         results_table = Table(title="Evaluation Results", show_header=True)
         results_table.add_column("Metric", style="cyan")
         results_table.add_column("Value", style="green")
         
         if choice == "1":  # PSNR
-            psnr_val = calculate_psnr(original, attacked)
+            original_path = select_image_from_directory(
+                INPUT_IMAGES_DIR,
+                "Choose Original Image (assets/input_images)",
+            )
+            if not original_path:
+                return
+
+            watermarked_path = select_image_from_directory(
+                WATERMARKED_IMAGES_DIR,
+                "Choose Watermarked Image (assets/watermarked_images)",
+            )
+            if not watermarked_path:
+                return
+
+            original = cv2.imread(original_path)
+            watermarked = cv2.imread(watermarked_path)
+            psnr_val = calculate_psnr(original, watermarked)
             results_table.add_row("PSNR", f"{psnr_val:.2f} dB")
         elif choice == "2":  # SSIM
-            ssim_val = calculate_ssim(original, attacked)
+            original_path = select_image_from_directory(
+                INPUT_IMAGES_DIR,
+                "Choose Original Image (assets/input_images)",
+            )
+            if not original_path:
+                return
+
+            watermarked_path = select_image_from_directory(
+                WATERMARKED_IMAGES_DIR,
+                "Choose Watermarked Image (assets/watermarked_images)",
+            )
+            if not watermarked_path:
+                return
+
+            original = cv2.imread(original_path)
+            watermarked = cv2.imread(watermarked_path)
+            ssim_val = calculate_ssim(original, watermarked)
             results_table.add_row("SSIM", f"{ssim_val:.4f}")
         elif choice == "3":  # BER
-            console.print("[dim]Note: BER requires extracted watermark (not available)[/dim]")
-        elif choice == "4":  # Full robustness
-            psnr_val = calculate_psnr(original, attacked)
-            ssim_val = calculate_ssim(original, attacked)
-            results_table.add_row("PSNR", f"{psnr_val:.2f} dB")
-            results_table.add_row("SSIM", f"{ssim_val:.4f}")
+            original_watermark_path = select_image_from_directory(
+                WATERMARKS_DIR,
+                "Choose Original Watermark (assets/watermarks)",
+            )
+            if not original_watermark_path:
+                return
+
+            extracted_watermark_path = select_image_from_directory(
+                EXTRACTED_ATTACKED_WATERMARKS_DIR,
+                "Choose Extracted Attacked Watermark (results/extracted_attacked_watermarks)",
+            )
+            if not extracted_watermark_path:
+                return
+
+            original_watermark = cv2.imread(original_watermark_path, cv2.IMREAD_GRAYSCALE)
+            extracted_watermark = cv2.imread(extracted_watermark_path, cv2.IMREAD_GRAYSCALE)
+            if original_watermark is None or extracted_watermark is None:
+                raise ValueError("Failed to read watermark image(s). Please verify the selected files.")
+
+            ber_val = calculate_ber(original_watermark, extracted_watermark)
+            results_table.add_row("BER", f"{ber_val:.6f}")
         
         console.print(results_table)
     except Exception as e:
@@ -280,7 +378,7 @@ def main():
         elif choice == "2":
             apply_attack()
         elif choice == "3":
-            evaluate_quality()
+            evaluate_watermark()
         elif choice == "4":
             console.print("\n[cyan]Goodbye![/cyan]\n")
             break

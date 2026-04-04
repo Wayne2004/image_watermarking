@@ -27,6 +27,11 @@ from evaluation import (
     calculate_ber,
     evaluate_watermark_robustness
 )
+from watermarking import (
+    run_embedding_pipeline,
+    extract_watermark,
+    ALPHA,
+)
 
 console = Console()
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -180,25 +185,47 @@ def select_watermark():
 
 
 def embed_watermark():
-    """Embed watermark (not implemented yet)"""
+    """Embed watermark using Hybrid DWT-DCT algorithm."""
     clear_screen()
-    render_shell("Embed Watermark", "Configuration preview")
-    console.print("\n[bold yellow]>> Watermark embedding is not yet implemented[/bold yellow]")
-    console.print("[dim]This feature will be available in a future update.[/dim]\n")
-    
+    render_shell("Embed Watermark", "Hybrid DWT-DCT Algorithm")
+
     image_path = select_input_image()
     if not image_path:
         return
-    
+
     watermark = select_watermark()
     if not watermark:
         return
-    
-    console.print("\n[cyan]Watermark embedding configuration:[/cyan]")
-    console.print(f"  Image: {image_path}")
-    console.print(f"  Watermark: {watermark}")
-    console.print("\n[dim]Coming soon...[/dim]\n")
-    Prompt.ask("Press Enter to continue")
+
+    # Build output path
+    WATERMARKED_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    stem   = Path(image_path).stem
+    output = WATERMARKED_IMAGES_DIR / f"watermarked_{stem}.png"
+
+    console.print("\n[cyan]Running DWT-DCT embedding…[/cyan]")
+    try:
+        result = run_embedding_pipeline(
+            image_path      = image_path,
+            watermark_input = watermark,
+            output_path     = str(output),
+            alpha           = ALPHA,
+        )
+        psnr_val = result["psnr"]
+        n_bits   = result["n_bits"]
+        capacity = result["capacity"]
+
+        table = Table(title="Embedding Results", show_header=True)
+        table.add_column("Metric",  style="cyan")
+        table.add_column("Value",   style="green")
+        table.add_row("Output file",     str(output))
+        table.add_row("PSNR",            f"{psnr_val:.2f} dB  {'✓ PASS (>38 dB)' if psnr_val >= 38 else '✗ below target'}")
+        table.add_row("Bits embedded",   f"{n_bits} / {capacity}")
+        table.add_row("Alpha (strength)",f"{ALPHA}")
+        console.print(table)
+    except Exception as e:
+        console.print(f"[bold red]X Embedding failed: {e}[/bold red]")
+
+    Prompt.ask("\nPress Enter to continue")
 
 
 def apply_attack():

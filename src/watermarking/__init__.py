@@ -1,5 +1,6 @@
 """
 Watermarking package — Module 1 (Data Preparation) + Module 2 (Embedding)
+Algorithm: PDWT-SCE v2 (Phase-Displacement Wavelet + Spatially-Correlated Embedding)
 """
 
 from .watermarking import (
@@ -13,7 +14,7 @@ from .watermarking import (
     apply_idct_blocks,
     embed_watermark,
     reconstruct_image,
-    # Extraction (bonus)
+    # Extraction
     extract_watermark,
     # Metrics
     calculate_psnr,
@@ -23,6 +24,8 @@ from .watermarking import (
     ALPHA,
     BLOCK_SIZE,
     WAVELET,
+    PHASE_DELTA_BASE,
+    DEFAULT_KEY,
 )
 
 __all__ = [
@@ -40,4 +43,6 @@ __all__ = [
     "ALPHA",
     "BLOCK_SIZE",
     "WAVELET",
+    "PHASE_DELTA_BASE",
+    "DEFAULT_KEY",
 ]

@@ -32,6 +32,16 @@ from watermarking import (
     extract_watermark,
     ALPHA,
 )
+from watermarking.extraction import (
+    run_extraction_pipeline,
+    extract_watermark_robust,
+    extract_watermark_batch,
+)
+from watermarking.arnold import (
+    arnold_transform,
+    inverse_arnold_transform,
+    arnold_period,
+)
 
 console = Console()
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -128,8 +138,9 @@ def display_menu():
         [
             ("Embed Watermark", "1"),
             ("Apply Attack", "2"),
-            ("Evaluate Watermark", "3"),
-            ("Exit", "4"),
+            ("Extract Watermark", "3"),
+            ("Evaluate Watermark", "4"),
+            ("Exit", "5"),
         ],
     )
 
@@ -310,6 +321,85 @@ def apply_attack():
     Prompt.ask("Press Enter to continue")
 
 
+def extract_watermark_cli():
+    """Extract watermark from a watermarked (possibly attacked) image."""
+    clear_screen()
+    render_shell("Extract Watermark", "Hybrid DWT-DCT Blind Extraction")
+
+    # Select watermarked image
+    image_path = select_image_from_directory(
+        WATERMARKED_IMAGES_DIR,
+        "Choose Watermarked Image",
+    )
+    if not image_path:
+        return
+
+    # Select attacked image option
+    attack_mode = select_from_menu(
+        "Extraction Mode",
+        [
+            ("Extract from unattacked image", "clean"),
+            ("Extract from attacked image", "attacked"),
+        ],
+    )
+
+    if attack_mode == "attacked":
+        image_path = select_image_from_directory(
+            ATTACK_RESULTS_DIR,
+            "Choose Attacked Image",
+        )
+        if not image_path:
+            return
+
+    # Get embedding parameters
+    n_bits = int(Prompt.ask("Number of watermark bits", default="100"))
+    wm_rows = int(Prompt.ask("Watermark grid rows", default="10"))
+    wm_cols = int(Prompt.ask("Watermark grid cols", default="10"))
+    alpha_val = float(Prompt.ask("Alpha (embedding strength)", default=str(ALPHA)))
+
+    arnold_use = select_from_menu(
+        "Arnold Descrambling",
+        [
+            ("No scrambling was used", "no"),
+            ("Yes, descramble", "yes"),
+        ],
+    )
+
+    arnold_iters = 0
+    if arnold_use == "yes":
+        arnold_iters = int(Prompt.ask("Arnold iterations", default="5"))
+
+    # Build output path
+    EXTRACTED_ATTACKED_WATERMARKS_DIR.mkdir(parents=True, exist_ok=True)
+    stem = Path(image_path).stem
+    output = EXTRACTED_ATTACKED_WATERMARKS_DIR / f"extracted_{stem}.png"
+
+    console.print("\n[cyan]Running watermark extraction…[/cyan]")
+    try:
+        watermark_shape = (wm_rows, wm_cols)
+        result = run_extraction_pipeline(
+            image_path=str(image_path),
+            n_bits=n_bits,
+            watermark_shape=watermark_shape,
+            alpha=alpha_val,
+            arnold_iterations=arnold_iters,
+            output_path=str(output),
+        )
+
+        table = Table(title="Extraction Results", show_header=True)
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="green")
+        table.add_row("Output file", str(output))
+        table.add_row("Bits extracted", str(result["n_bits_extracted"]))
+        table.add_row("Watermark shape", f"{watermark_shape}")
+        table.add_row("Arnold descrambled", "Yes" if result["arnold_descrambled"] else "No")
+        console.print(table)
+    except Exception as e:
+        console.print(f"[bold red]X Extraction failed: {e}[/bold red]")
+
+    Prompt.ask("\nPress Enter to continue")
+
+
 def evaluate_watermark():
     """Evaluate watermark robustness metrics."""
     choice = select_from_menu(
@@ -399,14 +489,16 @@ def main():
     """Main CLI loop"""
     while True:
         choice = display_menu()
-        
+
         if choice == "1":
             embed_watermark()
         elif choice == "2":
             apply_attack()
         elif choice == "3":
-            evaluate_watermark()
+            extract_watermark_cli()
         elif choice == "4":
+            evaluate_watermark()
+        elif choice == "5":
             console.print("\n[cyan]Goodbye![/cyan]\n")
             break
 

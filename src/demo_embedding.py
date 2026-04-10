@@ -23,13 +23,16 @@ What it does
 
 import sys
 import os
+from pathlib import Path
 
 # Make sure src/ is on the path when running from project root
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+sys.path.insert(0, os.path.dirname(__file__))
+
+# Project root is the parent of src/
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 import cv2
 import numpy as np
-from pathlib import Path
 
 from watermarking import (
     run_embedding_pipeline,
@@ -46,7 +49,6 @@ from watermarking import (
 # ─────────────────────────────────────────────────────────────────
 # Paths
 # ─────────────────────────────────────────────────────────────────
-PROJECT_ROOT      = Path(__file__).resolve().parent
 INPUT_DIR         = PROJECT_ROOT / "assets" / "input_images"
 WATERMARKS_DIR    = PROJECT_ROOT / "assets" / "watermarks"
 WATERMARKED_DIR   = PROJECT_ROOT / "assets" / "watermarked_images"

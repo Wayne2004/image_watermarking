@@ -344,9 +344,20 @@ def _embed_bit_into_band(dct_band: np.ndarray, watermark_bits: np.ndarray,
             sign_coeff = np.sign(coeff) if coeff != 0 else 1.0
             quantised  = round(magnitude / alpha_local) * alpha_local
 
-            new_magnitude = quantised + (alpha_local / 4.0 if bit == 1
-                                         else -alpha_local / 4.0)
-            new_magnitude = max(new_magnitude, alpha_local / 8.0)
+            if bit == 1:
+                new_magnitude = quantised + alpha_local / 4.0
+            else:
+                new_magnitude = quantised - alpha_local / 4.0
+                # If magnitude would go negative, use alternative quantisation
+                # Extraction detects this via the remainder being >= alpha/8
+                if new_magnitude < 0:
+                    new_magnitude = alpha_local / 8.0  # small positive → extraction sees rem > 0
+                    # But extraction rule says rem >= 0 → bit 1, so we need rem < 0
+                    # Use a value where roundtrip remainder is negative:
+                    # quantised = alpha_local, so new_mag = alpha_local - alpha/4 = 3*alpha/4
+                    # rem = 3*alpha/4 - alpha_local = -alpha/4 < 0 → bit 0 ✓
+                    quantised = alpha_local
+                    new_magnitude = quantised - alpha_local / 4.0
             dct_modified[br+EMBED_U, bc+EMBED_V] = sign_coeff * new_magnitude
             bit_idx += 1
         if bit_idx >= n_bits:

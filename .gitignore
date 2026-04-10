@@ -47,3 +47,5 @@ Thumbs.db
 
 # Project outputs
 results/
+
+.qwen/

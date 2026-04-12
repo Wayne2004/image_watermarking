@@ -8,6 +8,19 @@ import cv2
 from skimage.metrics import structural_similarity as ssim, peak_signal_noise_ratio as psnr
 
 
+def _align_images_for_quality_metrics(reference_image, target_image):
+    """Align images by cropping to their common spatial area without interpolation."""
+    ref_h, ref_w = reference_image.shape[:2]
+    tgt_h, tgt_w = target_image.shape[:2]
+    common_h = min(ref_h, tgt_h)
+    common_w = min(ref_w, tgt_w)
+
+    reference_aligned = reference_image[:common_h, :common_w]
+    target_aligned = target_image[:common_h, :common_w]
+
+    return reference_aligned, target_aligned
+
+
 def calculate_psnr(original_image, attacked_image):
     """
     Calculate Peak Signal-to-Noise Ratio (PSNR).
@@ -42,10 +55,12 @@ def calculate_psnr(original_image, attacked_image):
     >>> psnr_value = calculate_psnr(original, attacked)
     >>> print(f"PSNR: {psnr_value:.2f} dB")
     """
-    # Convert to same shape if needed
+    # Align by common crop to avoid interpolation artifacts from resizing.
     if original_image.shape != attacked_image.shape:
-        attacked_image = cv2.resize(attacked_image, 
-                                   (original_image.shape[1], original_image.shape[0]))
+        original_image, attacked_image = _align_images_for_quality_metrics(
+            original_image,
+            attacked_image,
+        )
     
     # Convert to float for calculation
     original = original_image.astype(np.float64)
@@ -102,10 +117,12 @@ def calculate_ssim(original_image, attacked_image, data_range=255):
     >>> ssim_value = calculate_ssim(original, attacked)
     >>> print(f"SSIM: {ssim_value:.4f}")
     """
-    # Convert to same shape if needed
+    # Align by common crop to avoid interpolation artifacts from resizing.
     if original_image.shape != attacked_image.shape:
-        attacked_image = cv2.resize(attacked_image,
-                                   (original_image.shape[1], original_image.shape[0]))
+        original_image, attacked_image = _align_images_for_quality_metrics(
+            original_image,
+            attacked_image,
+        )
     
     # Handle multi-channel images (e.g., BGR)
     if len(original_image.shape) == 3:
@@ -157,10 +174,11 @@ def calculate_ber(original_watermark, extracted_watermark):
     >>> ber = calculate_ber(original_wm, extracted_wm)
     >>> print(f"BER: {ber:.4f} ({ber*100:.2f}%)")
     """
-    # Ensure same shape
+    # Ensure same shape. Use nearest-neighbor to preserve binary structure.
     if original_watermark.shape != extracted_watermark.shape:
         extracted_watermark = cv2.resize(extracted_watermark,
-                                        (original_watermark.shape[1], original_watermark.shape[0]))
+                                        (original_watermark.shape[1], original_watermark.shape[0]),
+                                        interpolation=cv2.INTER_NEAREST)
     
     # Convert to binary (threshold at 128)
     _, original_binary = cv2.threshold(original_watermark, 128, 1, cv2.THRESH_BINARY)

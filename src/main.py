@@ -326,15 +326,7 @@ def extract_watermark_cli():
     clear_screen()
     render_shell("Extract Watermark", "Hybrid DWT-DCT Blind Extraction")
 
-    # Select watermarked image
-    image_path = select_image_from_directory(
-        WATERMARKED_IMAGES_DIR,
-        "Choose Watermarked Image",
-    )
-    if not image_path:
-        return
-
-    # Select attacked image option
+    # Choose extraction source first to avoid redundant prompts.
     attack_mode = select_from_menu(
         "Extraction Mode",
         [
@@ -348,8 +340,14 @@ def extract_watermark_cli():
             ATTACK_RESULTS_DIR,
             "Choose Attacked Image",
         )
-        if not image_path:
-            return
+    else:
+        image_path = select_image_from_directory(
+            WATERMARKED_IMAGES_DIR,
+            "Choose Watermarked Image",
+        )
+
+    if not image_path:
+        return
 
     # Get embedding parameters
     n_bits = int(Prompt.ask("Number of watermark bits", default="100"))
@@ -435,6 +433,15 @@ def evaluate_watermark():
             watermarked = cv2.imread(watermarked_path)
             psnr_val = calculate_psnr(original, watermarked)
             results_table.add_row("PSNR", f"{psnr_val:.2f} dB")
+            if psnr_val >= 40:
+                psnr_note = "Excellent - watermark is visually imperceptible"
+            elif psnr_val >= 35:
+                psnr_note = "Good - minor perceptual difference"
+            elif psnr_val >= 30:
+                psnr_note = "Fair - visible distortion may appear"
+            else:
+                psnr_note = "Poor - significant quality degradation"
+            results_table.add_row("Interpretation", psnr_note)
         elif choice == "2":  # SSIM
             original_path = select_image_from_directory(
                 INPUT_IMAGES_DIR,
@@ -454,6 +461,15 @@ def evaluate_watermark():
             watermarked = cv2.imread(watermarked_path)
             ssim_val = calculate_ssim(original, watermarked)
             results_table.add_row("SSIM", f"{ssim_val:.4f}")
+            if ssim_val >= 0.98:
+                ssim_note = "Excellent - near-identical structure"
+            elif ssim_val >= 0.95:
+                ssim_note = "Good - high structural similarity"
+            elif ssim_val >= 0.90:
+                ssim_note = "Fair - moderate structural change"
+            else:
+                ssim_note = "Poor - notable structural distortion"
+            results_table.add_row("Interpretation", ssim_note)
         elif choice == "3":  # BER
             original_watermark_path = select_image_from_directory(
                 WATERMARKS_DIR,
@@ -476,6 +492,15 @@ def evaluate_watermark():
 
             ber_val = calculate_ber(original_watermark, extracted_watermark)
             results_table.add_row("BER", f"{ber_val:.6f}")
+            if ber_val <= 0.01:
+                ber_note = "Excellent - very reliable extraction"
+            elif ber_val <= 0.05:
+                ber_note = "Good - robust with minor bit errors"
+            elif ber_val <= 0.10:
+                ber_note = "Fair - extraction is somewhat degraded"
+            else:
+                ber_note = "Poor - extraction quality is weak"
+            results_table.add_row("Interpretation", ber_note)
         
         console.print(results_table)
     except Exception as e:

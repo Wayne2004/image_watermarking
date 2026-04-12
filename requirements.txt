@@ -4,3 +4,4 @@ Pillow
 scikit-image
 rich-cli
 questionary
+PyWavelets

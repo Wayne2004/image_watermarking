@@ -620,15 +620,14 @@ def run_embedding_pipeline(
     dict with keys:
         watermarked_image, psnr, n_bits, watermark_shape, capacity
     """
-    print("\n" + "=" * 60)
-    print("  DWT-DCT Watermark Embedding Pipeline  (Enhanced)")
-    print("  Innovation I:  Adaptive Alpha (HVS masking)")
-    print("  Innovation II: Dual Sub-band Embedding (LH + HL)")
-    print("=" * 60)
+
+    print("\n" + "=" * 90)
+    print("  DWT-DCT Watermark Embedding Pipeline ")
+    print("=" * 90)
 
     # ── Module 1 ────────────────────────────────────────────────
-    print("\n[Module 1] Data Preparation")
-    print("-" * 40)
+    print("\nData Preparation")
+    print("-" * 80)
     original           = load_image(image_path)
     Y_norm, Cb, Cr, _  = preprocess_image(original)
 
@@ -641,8 +640,8 @@ def run_embedding_pipeline(
     watermark_bits = prepare_watermark(watermark_input, capacity)
 
     # ── Module 2 ────────────────────────────────────────────────
-    print("\n[Module 2] Watermark Embedding")
-    print("-" * 40)
+    print("\nWatermark Embedding")
+    print("-" * 80)
     Y_watermarked, watermark_shape = embed_watermark(Y_norm, watermark_bits, alpha)
     watermarked_image              = reconstruct_image(Y_watermarked, Cb, Cr)
 
@@ -651,14 +650,14 @@ def run_embedding_pipeline(
     out.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(out), watermarked_image)
 
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 90)
     print("  Embedding Complete")
-    print("=" * 60)
+    print("=" * 90)
     print(f"  Output  : {out}")
     print(f"  Bits    : {len(watermark_bits)} / {capacity}")
     print(f"  Alpha   : {alpha}  (adaptive per block, HVS_GAIN={HVS_GAIN})")
     print(f"  Sub-bands: LH + HL  (dual embedding)")
-    print("=" * 60 + "\n")
+    print("=" * 90 + "\n")
 
     return {
         "watermarked_image": watermarked_image,

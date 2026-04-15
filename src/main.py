@@ -4,7 +4,6 @@ Interactive command-line interface for watermarking, attacks, and evaluation
 """
 
 from rich.console import Console
-from rich.prompt import Prompt
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
@@ -93,6 +92,17 @@ def render_shell(title, subtitle=None):
     console.print(Panel(header_text, border_style="#219ebc", padding=(1, 2)))
 
 
+def press_enter():
+    """Wait for Enter key using questionary (handles Ctrl+C gracefully)."""
+    questionary.text("Press Enter to continue...", qmark="", style=SELECT_STYLE).ask()
+
+
+def ask_value(prompt, default=""):
+    """Ask for a text value using questionary."""
+    result = questionary.text(prompt, default=default, qmark="", style=SELECT_STYLE).ask()
+    return result if result is not None else default
+
+
 def select_from_menu(title, options):
     """Arrow-key menu selection using up/down and Enter."""
     clear_screen()
@@ -124,7 +134,7 @@ def select_image_from_directory(directory, title):
     if not images:
         clear_screen()
         console.print(f"[bold red]X No images found in {directory}[/bold red]")
-        Prompt.ask("Press Enter to continue")
+        press_enter()
         return None
 
     options = [(img.name, str(img)) for img in images]
@@ -190,8 +200,14 @@ def select_watermark():
         return watermark_path
     else:
         clear_screen()
-        console.print("[dim](Text watermark input)[/dim]")
-        text = Prompt.ask("Enter watermark text")
+        render_shell("Text Watermark", "Enter the text to embed as watermark")
+        text = questionary.text(
+            "Enter watermark text:",
+            qmark="",
+            style=SELECT_STYLE,
+        ).ask()
+        if not text:
+            return None
         return text
 
 
@@ -234,7 +250,7 @@ def embed_watermark():
     except Exception as e:
         console.print(f"[bold red]X Embedding failed: {e}[/bold red]")
 
-    Prompt.ask("\nPress Enter to continue")
+    press_enter()
 
 
 def apply_attack():
@@ -259,13 +275,13 @@ def apply_attack():
     
     try:
         if choice == "1":  # JPEG Compression
-            quality = int(Prompt.ask("Quality (0-100)", default="75"))
+            quality = int(ask_value("Quality (0-100)", default="75"))
             attacked_image = selected_attack["func"](image, quality=quality)
         elif choice == "2":  # Gaussian Noise
-            sigma = int(Prompt.ask("Sigma (5-50)", default="10"))
+            sigma = int(ask_value("Sigma (5-50)", default="10"))
             attacked_image = selected_attack["func"](image, sigma=sigma)
         elif choice == "3":  # Blurring
-            kernel_size = int(Prompt.ask("Kernel size (odd number)", default="5"))
+            kernel_size = int(ask_value("Kernel size (odd number)", default="5"))
             if kernel_size % 2 == 0:
                 kernel_size += 1
             attacked_image = selected_attack["func"](image, kernel_size=kernel_size)
@@ -280,14 +296,14 @@ def apply_attack():
             )
 
             if crop_mode == "percentage":
-                percentage = float(Prompt.ask("Crop percentage (0-0.5)", default="0.1"))
+                percentage = float(ask_value("Crop percentage (0-0.5)", default="0.1"))
                 attacked_image = selected_attack["func"](image, percentage=percentage)
             else:
                 console.print(f"[dim]Image size: width={width}, height={height}[/dim]")
-                x_start = int(Prompt.ask("x_start", default="0"))
-                y_start = int(Prompt.ask("y_start", default="0"))
-                x_end = int(Prompt.ask("x_end", default=str(width)))
-                y_end = int(Prompt.ask("y_end", default=str(height)))
+                x_start = int(ask_value("x_start", default="0"))
+                y_start = int(ask_value("y_start", default="0"))
+                x_end = int(ask_value("x_end", default=str(width)))
+                y_end = int(ask_value("y_end", default=str(height)))
 
                 if x_end <= x_start or y_end <= y_start:
                     raise ValueError("Invalid crop region: x_end must be > x_start and y_end must be > y_start")
@@ -300,7 +316,7 @@ def apply_attack():
                 if attacked_image.size == 0:
                     raise ValueError("Crop region produced an empty image. Please choose a larger region.")
         elif choice == "5":  # Scaling
-            scale = float(Prompt.ask("Scale factor", default="0.5"))
+            scale = float(ask_value("Scale factor", default="0.5"))
             attacked_image = selected_attack["func"](image, scale_factor=scale)
         
         # Save attacked image to results/attack_results; JPEG attack is exported as .jpg.
@@ -316,7 +332,7 @@ def apply_attack():
     except Exception as e:
         console.print(f"[bold red]X Error applying attack: {e}[/bold red]\n")
     
-    Prompt.ask("Press Enter to continue")
+    press_enter()
 
 
 def extract_watermark_cli():
@@ -348,10 +364,10 @@ def extract_watermark_cli():
         return
 
     # Get embedding parameters
-    n_bits = int(Prompt.ask("Number of watermark bits", default="100"))
-    wm_rows = int(Prompt.ask("Watermark grid rows", default="10"))
-    wm_cols = int(Prompt.ask("Watermark grid cols", default="10"))
-    alpha_val = float(Prompt.ask("Alpha (embedding strength)", default=str(ALPHA)))
+    n_bits = int(ask_value("Number of watermark bits", default="100"))
+    wm_rows = int(ask_value("Watermark grid rows", default="10"))
+    wm_cols = int(ask_value("Watermark grid cols", default="10"))
+    alpha_val = float(ask_value("Alpha (embedding strength)", default=str(ALPHA)))
 
     arnold_use = select_from_menu(
         "Arnold Descrambling",
@@ -363,7 +379,7 @@ def extract_watermark_cli():
 
     arnold_iters = 0
     if arnold_use == "yes":
-        arnold_iters = int(Prompt.ask("Arnold iterations", default="5"))
+        arnold_iters = int(ask_value("Arnold iterations", default="5"))
 
     # Build output path
     EXTRACTED_ATTACKED_WATERMARKS_DIR.mkdir(parents=True, exist_ok=True)
@@ -393,7 +409,7 @@ def extract_watermark_cli():
     except Exception as e:
         console.print(f"[bold red]X Extraction failed: {e}[/bold red]")
 
-    Prompt.ask("\nPress Enter to continue")
+    press_enter()
 
 
 def evaluate_watermark():
@@ -505,7 +521,7 @@ def evaluate_watermark():
         console.print(f"[bold red]X Error during evaluation: {e}[/bold red]")
     
     console.print()
-    Prompt.ask("Press Enter to continue")
+    press_enter()
 
 
 def main():

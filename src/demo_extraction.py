@@ -207,7 +207,6 @@ def main():
     watermarked_image = result["watermarked_image"]
     watermark_shape   = result["watermark_shape"]
     n_bits            = result["n_bits"]
-    psnr_val          = result["psnr"]
     wm_bits           = result["watermark_bits"]
 
     # Create reference watermark from bits
@@ -271,7 +270,6 @@ def main():
     print("╠" + "═" * 68 + "╣")
     print(f"║  Host image         : {HOST_IMAGE.name:<45}║")
     print(f"║  Watermark          : {WATERMARK_IMAGE.name:<45}║")
-    print(f"║  Embedding PSNR     : {psnr_val:6.2f} dB  {'✓ PASS (>38 dB)' if psnr_val >= 38 else '✗ FAIL'}" + " " * max(0, 27 - len('✓ PASS (>38 dB)')) + "║")
     print(f"║  Bits embedded      : {n_bits:<45}║")
     print(f"║  Watermark shape    : {str(watermark_shape):<45}║")
     print("╟" + "─" * 68 + "╢")

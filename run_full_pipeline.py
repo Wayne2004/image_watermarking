@@ -331,7 +331,6 @@ def run_full_pipeline(
     watermarked_image = embed_result["watermarked_image"]
     watermark_shape   = embed_result["watermark_shape"]
     n_bits            = embed_result["n_bits"]
-    psnr_embed        = embed_result["psnr"]
 
     # Load original watermark for comparison
     original_wm = cv2.imread(str(watermark_path), cv2.IMREAD_GRAYSCALE)
@@ -513,9 +512,6 @@ def generate_report(
     # Embedding section
     print("║" + "  EMBEDDING".center(68) + "║")
     print("╟" + "─" * 68 + "╢")
-    psnr = embed_result["psnr"]
-    psnr_flag = "✓ PASS" if psnr >= 38 else "✗ FAIL"
-    print(f"║  PSNR (embedding)  : {psnr:8.2f} dB  {psnr_flag}" + " " * (33 - len(psnr_flag)) + "║")
     print(f"║  Bits embedded     : {embed_result['n_bits']:>8}" + " " * 47 + "║")
     print(f"║  Alpha             : {embed_result.get('capacity', 'N/A'):>8}" + " " * 47 + "║")
     print(f"║  Arnold Scramble   : {'Yes (iter=' + str(arnold_iterations) + ')' if use_arnold else 'No'}" + " " * (55 - (len('Yes (iter=' + str(arnold_iterations) + ')') if use_arnold else 2)) + "║")

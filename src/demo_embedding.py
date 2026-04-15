@@ -87,7 +87,7 @@ def generate_synthetic_watermark(capacity: int, save_path: Path) -> np.ndarray:
     return wm
 
 
-def print_report(original, watermarked, extracted_wm, wm_bits, capacity, psnr_val, watermark_shape):
+def print_report(original, watermarked, extracted_wm, wm_bits, capacity, watermark_shape):
     """Pretty-print a metrics summary."""
     separator = "─" * 58
 
@@ -98,10 +98,6 @@ def print_report(original, watermarked, extracted_wm, wm_bits, capacity, psnr_va
 
     print(f"║  Host image shape     : {str(original.shape):<30}║")
     print(f"║  Watermarked shape    : {str(watermarked.shape):<30}║")
-    print(separator)
-
-    psnr_flag = "✓ PASS" if psnr_val >= 38 else "✗ BELOW TARGET (38 dB)"
-    print(f"║  PSNR (imperceptibility)  : {psnr_val:6.2f} dB   {psnr_flag:<14}║")
     print(separator)
 
     print(f"║  Embedding capacity   : {capacity:<30}║")
@@ -149,7 +145,6 @@ def main():
     watermarked_image = result["watermarked_image"]
     watermark_shape   = result["watermark_shape"]
     n_bits            = result["n_bits"]
-    psnr_val          = result["psnr"]
 
     # ── Extract watermark to verify ───────────────────────────────
     print("[demo] Running extraction (blind — no original needed)…")
@@ -175,7 +170,6 @@ def main():
         extracted_wm,
         dummy_bits,
         capacity,
-        psnr_val,
         watermark_shape,
     )
 

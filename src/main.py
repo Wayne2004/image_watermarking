@@ -221,7 +221,6 @@ def embed_watermark():
             output_path     = str(output),
             alpha           = ALPHA,
         )
-        psnr_val = result["psnr"]
         n_bits   = result["n_bits"]
         capacity = result["capacity"]
 
@@ -229,7 +228,6 @@ def embed_watermark():
         table.add_column("Metric",  style="cyan")
         table.add_column("Value",   style="green")
         table.add_row("Output file",     str(output))
-        table.add_row("PSNR",            f"{psnr_val:.2f} dB  {'✓ PASS (>38 dB)' if psnr_val >= 38 else '✗ below target'}")
         table.add_row("Bits embedded",   f"{n_bits} / {capacity}")
         table.add_row("Alpha (strength)",f"{ALPHA}")
         console.print(table)

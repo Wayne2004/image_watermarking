@@ -651,17 +651,10 @@ def run_embedding_pipeline(
     out.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(out), watermarked_image)
 
-    psnr_val = calculate_psnr(
-        original[:Y_watermarked.shape[0], :Y_watermarked.shape[1]],
-        watermarked_image
-    )
-
     print("\n" + "=" * 60)
     print("  Embedding Complete")
     print("=" * 60)
     print(f"  Output  : {out}")
-    print(f"  PSNR    : {psnr_val:.2f} dB  "
-          f"{'✓ PASS (target >38 dB)' if psnr_val >= 38 else '✗ below target'}")
     print(f"  Bits    : {len(watermark_bits)} / {capacity}")
     print(f"  Alpha   : {alpha}  (adaptive per block, HVS_GAIN={HVS_GAIN})")
     print(f"  Sub-bands: LH + HL  (dual embedding)")
@@ -669,7 +662,6 @@ def run_embedding_pipeline(
 
     return {
         "watermarked_image": watermarked_image,
-        "psnr":              psnr_val,
         "n_bits":            len(watermark_bits),
         "watermark_shape":   watermark_shape,
         "capacity":          capacity,

@@ -66,6 +66,10 @@ from pathlib import Path
 import math
 
 
+from .arnold import (
+    arnold_scramble_bits,
+)
+
 # ─────────────────────────────────────────────────────────────────
 # CONSTANTS
 # ─────────────────────────────────────────────────────────────────
@@ -600,6 +604,7 @@ def run_embedding_pipeline(
     watermark_input,
     output_path: str,
     alpha: float = ALPHA,
+    arnold_iterations: int = 0,
 ) -> dict:
     """
     End-to-end embedding pipeline (Module 1 + Module 2).
@@ -610,15 +615,16 @@ def run_embedding_pipeline(
 
     Parameters
     ----------
-    image_path      : host image path
-    watermark_input : watermark path or numpy array
-    output_path     : where to save the watermarked image
-    alpha           : base embedding strength
+    image_path        : host image path
+    watermark_input   : watermark path or numpy array
+    output_path       : where to save the watermarked image
+    alpha             : base embedding strength
+    arnold_iterations : scrambling key (0 = no scrambling)
 
     Returns
     -------
     dict with keys:
-        watermarked_image, psnr, n_bits, watermark_shape, capacity
+        watermarked_image, psnr, n_bits, watermark_shape, capacity, arnold_iterations
     """
 
     print("\n" + "=" * 90)
@@ -639,6 +645,14 @@ def run_embedding_pipeline(
 
     watermark_bits = prepare_watermark(watermark_input, capacity)
 
+    # Optional Arnold Scrambling (Innovation)
+    actual_iterations = 0
+    if arnold_iterations > 0:
+        print(f"[Module 1] Applying Arnold Scrambling ({arnold_iterations} iterations)...")
+        watermark_bits, grid_shape, padding = arnold_scramble_bits(watermark_bits, iterations=arnold_iterations)
+        actual_iterations = arnold_iterations
+        print(f"[Module 1] Scrambled into {grid_shape} grid with {padding} padding bits")
+
     # ── Module 2 ────────────────────────────────────────────────
     print("\nWatermark Embedding")
     print("-" * 80)
@@ -657,6 +671,8 @@ def run_embedding_pipeline(
     print(f"  Bits    : {len(watermark_bits)} / {capacity}")
     print(f"  Alpha   : {alpha}  (adaptive per block, HVS_GAIN={HVS_GAIN})")
     print(f"  Sub-bands: LH + HL  (dual embedding)")
+    if actual_iterations > 0:
+        print(f"  Arnold  : {actual_iterations} iterations (SCRAMBLED)")
     print("=" * 90 + "\n")
 
     return {
@@ -665,4 +681,5 @@ def run_embedding_pipeline(
         "watermark_shape":   watermark_shape,
         "capacity":          capacity,
         "watermark_bits":    watermark_bits,
+        "arnold_iterations": actual_iterations
     }

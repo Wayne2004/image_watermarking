@@ -24,6 +24,7 @@ from evaluation import (
     calculate_psnr,
     calculate_ssim,
     calculate_ber,
+    calculate_ncc,
     evaluate_watermark_robustness
 )
 from watermarking import (
@@ -75,6 +76,7 @@ EVALUATION_METHODS = {
     "1": "PSNR (Peak Signal-to-Noise Ratio)",
     "2": "SSIM (Structural Similarity Index)",
     "3": "BER (Bit Error Rate)",
+    "4": "NCC (Normalized Cross-Correlation)",
 }
 
 
@@ -224,6 +226,19 @@ def embed_watermark():
     if not watermark:
         return
 
+    # Arnold Scrambling prompt
+    arnold_use = select_from_menu(
+        "Enable Arnold Scrambling (Encryption)?",
+        [
+            ("Yes, scramble watermark", "yes"),
+            ("No, use raw watermark", "no"),
+        ],
+    )
+
+    arnold_iters = 0
+    if arnold_use == "yes":
+        arnold_iters = int(ask_value("Arnold iterations (key)", default="5"))
+
     # Build output path
     WATERMARKED_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     stem   = Path(image_path).stem
@@ -236,9 +251,11 @@ def embed_watermark():
             watermark_input = watermark,
             output_path     = str(output),
             alpha           = ALPHA,
+            arnold_iterations = arnold_iters,
         )
         n_bits   = result["n_bits"]
         capacity = result["capacity"]
+        actual_iters = result.get("arnold_iterations", 0)
 
         table = Table(title="Embedding Results", show_header=True)
         table.add_column("Metric",  style="cyan")
@@ -246,6 +263,7 @@ def embed_watermark():
         table.add_row("Output file",     str(output))
         table.add_row("Bits embedded",   f"{n_bits} / {capacity}")
         table.add_row("Alpha (strength)",f"{ALPHA}")
+        table.add_row("Arnold Scrambling", f"{actual_iters} iterations" if actual_iters > 0 else "None")
         console.print(table)
     except Exception as e:
         console.print(f"[bold red]X Embedding failed: {e}[/bold red]")
@@ -515,6 +533,37 @@ def evaluate_watermark():
             else:
                 ber_note = "Poor - extraction quality is weak"
             results_table.add_row("Interpretation", ber_note)
+        elif choice == "4":  # NCC
+            original_watermark_path = select_image_from_directory(
+                WATERMARKS_DIR,
+                "Choose Original Watermark (assets/watermarks)",
+            )
+            if not original_watermark_path:
+                return
+
+            extracted_watermark_path = select_image_from_directory(
+                EXTRACTED_ATTACKED_WATERMARKS_DIR,
+                "Choose Extracted Attacked Watermark (results/extracted_attacked_watermarks)",
+            )
+            if not extracted_watermark_path:
+                return
+
+            original_watermark = cv2.imread(original_watermark_path, cv2.IMREAD_GRAYSCALE)
+            extracted_watermark = cv2.imread(extracted_watermark_path, cv2.IMREAD_GRAYSCALE)
+            if original_watermark is None or extracted_watermark is None:
+                raise ValueError("Failed to read watermark image(s). Please verify the selected files.")
+
+            ncc_val = calculate_ncc(original_watermark, extracted_watermark)
+            results_table.add_row("NCC", f"{ncc_val:.4f}")
+            if ncc_val >= 0.95:
+                ncc_note = "Excellent - high robustness"
+            elif ncc_val >= 0.90:
+                ncc_note = "Good - strong correlation"
+            elif ncc_val >= 0.80:
+                ncc_note = "Fair - visible degradation"
+            else:
+                ncc_note = "Poor - low robustness"
+            results_table.add_row("Interpretation", ncc_note)
         
         console.print(results_table)
     except Exception as e:

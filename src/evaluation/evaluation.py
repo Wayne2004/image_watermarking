@@ -198,6 +198,45 @@ def calculate_ber(original_watermark, extracted_watermark):
     return ber
 
 
+def calculate_ncc(original_watermark, extracted_watermark):
+    """
+    Calculate Normalized Cross-Correlation (NCC).
+    
+    Measures the structural similarity between original and extracted watermarks.
+    NCC ranges from 0 to 1, where 1.0 is perfect correlation.
+    
+    Parameters:
+    -----------
+    original_watermark : numpy.ndarray
+        Original watermark
+    extracted_watermark : numpy.ndarray
+        Extracted watermark
+    
+    Returns:
+    --------
+    float
+        NCC value (0 to 1)
+    """
+    # Ensure same shape
+    if original_watermark.shape != extracted_watermark.shape:
+        extracted_watermark = cv2.resize(extracted_watermark,
+                                        (original_watermark.shape[1], original_watermark.shape[0]),
+                                        interpolation=cv2.INTER_NEAREST)
+    
+    # Convert to float for calculation
+    w1 = original_watermark.astype(np.float64)
+    w2 = extracted_watermark.astype(np.float64)
+    
+    # Calculate NCC
+    numerator = np.sum(w1 * w2)
+    denominator = np.sqrt(np.sum(w1**2) * np.sum(w2**2))
+    
+    if denominator == 0:
+        return 0.0
+        
+    return numerator / denominator
+
+
 def evaluate_watermark_robustness(original_image, 
                                   watermarked_image,
                                   attacked_image,
@@ -206,7 +245,7 @@ def evaluate_watermark_robustness(original_image,
     """
     Comprehensive evaluation of watermark robustness.
     
-    Calculates PSNR, SSIM, and BER in a single call and returns
+    Calculates PSNR, SSIM, BER, and NCC in a single call and returns
     a dictionary with all metrics.
     
     Parameters:
@@ -225,28 +264,15 @@ def evaluate_watermark_robustness(original_image,
     Returns:
     --------
     dict
-        Dictionary containing:
-        - 'psnr_embedding': PSNR between original and watermarked images
-        - 'ssim_embedding': SSIM between original and watermarked images
-        - 'psnr_attack': PSNR between watermarked and attacked images
-        - 'ssim_attack': SSIM between watermarked and attacked images
-        - 'ber': Bit error rate of extracted watermark
-    
-    Example:
-    --------
-    >>> results = evaluate_watermark_robustness(
-    ...     original_img, watermarked_img, attacked_img,
-    ...     original_wm, extracted_wm
-    ... )
-    >>> print(f"Embedding PSNR: {results['psnr_embedding']:.2f} dB")
-    >>> print(f"BER after attack: {results['ber']:.4f}")
+        Dictionary containing metrics.
     """
     results = {
         'psnr_embedding': calculate_psnr(original_image, watermarked_image),
         'ssim_embedding': calculate_ssim(original_image, watermarked_image),
         'psnr_attack': calculate_psnr(watermarked_image, attacked_image),
         'ssim_attack': calculate_ssim(watermarked_image, attacked_image),
-        'ber': calculate_ber(original_watermark, extracted_watermark)
+        'ber': calculate_ber(original_watermark, extracted_watermark),
+        'ncc': calculate_ncc(original_watermark, extracted_watermark)
     }
     
     return results

@@ -265,6 +265,17 @@ def embed_watermark():
         table.add_row("Alpha (strength)",f"{ALPHA}")
         table.add_row("Arnold Scrambling", f"{actual_iters} iterations" if actual_iters > 0 else "None")
         console.print(table)
+
+        # Extraction Key Summary Panel
+        wm_rows, wm_cols = result["watermark_shape"]
+        summary_text = Text()
+        summary_text.append("\n[!] SAVE THIS FOR EXTRACTION [!]\n", style="bold yellow")
+        summary_text.append(f"Bit Count  : {n_bits}\n", style="cyan")
+        summary_text.append(f"Grid Shape : {{row: {wm_rows}, col: {wm_cols}}}\n", style="cyan")
+        summary_text.append(f"Arnold Key : {actual_iters}", style="cyan")
+        
+        console.print(Panel(summary_text, title="Extraction Key", border_style="yellow"))
+
     except Exception as e:
         console.print(f"[bold red]X Embedding failed: {e}[/bold red]")
 

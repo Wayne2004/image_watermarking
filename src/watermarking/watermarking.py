@@ -162,13 +162,13 @@ def preprocess_image(image: np.ndarray) -> tuple:
     return Y_norm, Cb, Cr, ycbcr
 
 
-def prepare_watermark(watermark_input, embed_capacity: int) -> np.ndarray:
+def prepare_watermark(watermark_input, embed_capacity: int) -> tuple:
     """
     Prepare a watermark for embedding.
 
     Accepts a file path (str/Path) or a numpy array.
     Converts to grayscale, binarises at 128, resizes to fit
-    embed_capacity, and returns a 1-D uint8 bit array.
+    embed_capacity, and returns a 1-D uint8 bit array and its shape.
 
     Parameters
     ----------
@@ -178,15 +178,42 @@ def prepare_watermark(watermark_input, embed_capacity: int) -> np.ndarray:
 
     Returns
     -------
-    np.ndarray  1-D uint8 array of 0/1 values
+    tuple (bits_1d, original_shape)
+        bits_1d        : 1-D uint8 array of 0/1 values
+        original_shape : (rows, cols) of the binarised watermark
     """
     if isinstance(watermark_input, (str, Path)):
         path = Path(str(watermark_input))
         if not path.exists():
-            import PIL.Image as PILImage, PIL.ImageDraw as PILDraw
-            img_pil = PILImage.new('L', (200, 60), color=0)
-            PILDraw.Draw(img_pil).text((10, 10), str(watermark_input), fill=255)
+            import PIL.Image as PILImage, PIL.ImageDraw as PILDraw, PIL.ImageFont as PILFont
+            
+            # Attempt to use a much larger TrueType font
+            font_size = 72
+            try:
+                font = PILFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
+            except:
+                try:
+                    font = PILFont.truetype("arial.ttf", font_size)
+                except:
+                    font = PILFont.load_default()
+            
+            # Create a temporary canvas to measure text size
+            temp_img = PILImage.new('L', (1000, 200))
+            temp_draw = PILDraw.Draw(temp_img)
+            bbox = temp_draw.textbbox((0, 0), str(watermark_input), font=font)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            
+            # Create a tight canvas based on actual text size
+            img_pil = PILImage.new('L', (tw + 4, th + 4), color=0)
+            draw = PILDraw.Draw(img_pil)
+            draw.text((2, 2), str(watermark_input), font=font, fill=255)
             wm = np.array(img_pil)
+            
+            # Save the generated watermark for inspection (Role C requirement)
+            gen_path = Path("assets/watermarks/generated_watermark.png")
+            gen_path.parent.mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(gen_path), wm)
+            print(f"[prepare_watermark] Generated tight text watermark ({wm.shape[1]}x{wm.shape[0]}) saved to {gen_path}")
         else:
             wm = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
             if wm is None:
@@ -207,9 +234,10 @@ def prepare_watermark(watermark_input, embed_capacity: int) -> np.ndarray:
         print(f"[prepare_watermark] Resized to ({nh},{nw}) to fit capacity={embed_capacity}")
 
     bits = wm_bin.flatten().astype(np.uint8)
-    print(f"[prepare_watermark] Watermark bits={len(bits)}  capacity={embed_capacity}  "
+    shape = wm_bin.shape
+    print(f"[prepare_watermark] Watermark bits={len(bits)}  shape={shape}  capacity={embed_capacity}  "
           f"utilisation={len(bits)/embed_capacity*100:.1f}%")
-    return bits
+    return bits, shape
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -643,21 +671,50 @@ def run_embedding_pipeline(
     capacity           = (h_band // BLOCK_SIZE) * (w_band // BLOCK_SIZE)
     print(f"[Module 1] Embedding capacity = {capacity} bits")
 
-    watermark_bits = prepare_watermark(watermark_input, capacity)
+    is_text = False
+    if isinstance(watermark_input, (str, Path)):
+        if not Path(str(watermark_input)).exists():
+            is_text = True
+
+    watermark_bits, watermark_shape_orig = prepare_watermark(watermark_input, capacity)
 
     # Optional Arnold Scrambling (Innovation)
     actual_iterations = 0
+    wm_shape_embedded = watermark_shape_orig
+    actual_n_bits     = len(watermark_bits)
+
     if arnold_iterations > 0:
         print(f"[Module 1] Applying Arnold Scrambling ({arnold_iterations} iterations)...")
+        # Role C: Reverted to compact square padding
         watermark_bits, grid_shape, padding = arnold_scramble_bits(watermark_bits, iterations=arnold_iterations)
+
+        # Check if the PADDED bits still fit in the capacity
+        if len(watermark_bits) > capacity:
+             print(f"[Module 1] WARNING: Padded square ({len(watermark_bits)} bits) exceeds capacity ({capacity}).")
+             print(f"           Reducing logo size so the resulting square fits...")
+             # Re-prepare with extra breathing room for the square padding
+             safe_capacity = int(math.floor(math.sqrt(capacity))**2)
+             watermark_bits, watermark_shape_orig = prepare_watermark(watermark_input, safe_capacity)
+             watermark_bits, grid_shape, padding = arnold_scramble_bits(watermark_bits, iterations=arnold_iterations)
+
         actual_iterations = arnold_iterations
-        print(f"[Module 1] Scrambled into {grid_shape} grid with {padding} padding bits")
+        wm_shape_embedded = grid_shape
+        actual_n_bits     = len(watermark_bits)
+
+        # Save scrambled watermark for inspection
+        scrambled_grid = watermark_bits.reshape(grid_shape)
+        scrambled_img  = (scrambled_grid * 255).astype(np.uint8)
+        arnold_path    = Path("assets/watermarks/generated_arnold_watermark.png")
+        arnold_path.parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(arnold_path), scrambled_img)
+
+        print(f"[Module 1] Scrambled into {grid_shape} square (Total bits: {actual_n_bits})")
 
     # ── Module 2 ────────────────────────────────────────────────
     print("\nWatermark Embedding")
     print("-" * 80)
-    Y_watermarked, watermark_shape = embed_watermark(Y_norm, watermark_bits, alpha)
-    watermarked_image              = reconstruct_image(Y_watermarked, Cb, Cr)
+    Y_watermarked, _ = embed_watermark(Y_norm, watermark_bits, alpha)
+    watermarked_image = reconstruct_image(Y_watermarked, Cb, Cr)
 
     # Save
     out = Path(output_path)
@@ -667,19 +724,22 @@ def run_embedding_pipeline(
     print("\n" + "=" * 90)
     print("  Embedding Complete")
     print("=" * 90)
-    print(f"  Output  : {out}")
-    print(f"  Bits    : {len(watermark_bits)} / {capacity}")
-    print(f"  Alpha   : {alpha}  (adaptive per block, HVS_GAIN={HVS_GAIN})")
+    print(f"  Output   : {out}")
+    print(f"  Bits     : {actual_n_bits} / {capacity}")
+    print(f"  Embedded : {wm_shape_embedded}  (from original {watermark_shape_orig})")
+    print(f"  Alpha    : {alpha}  (adaptive per block, HVS_GAIN={HVS_GAIN})")
     print(f"  Sub-bands: LH + HL  (dual embedding)")
     if actual_iterations > 0:
-        print(f"  Arnold  : {actual_iterations} iterations (SCRAMBLED)")
+        print(f"  Arnold   : {actual_iterations} iterations (SCRAMBLED)")
     print("=" * 90 + "\n")
 
     return {
         "watermarked_image": watermarked_image,
-        "n_bits":            len(watermark_bits),
-        "watermark_shape":   watermark_shape,
+        "n_bits":            actual_n_bits,
+        "watermark_shape":   wm_shape_embedded,      # Shape to use for DWT extraction
+        "original_shape":    watermark_shape_orig,   # Shape to use for final recovery
         "capacity":          capacity,
         "watermark_bits":    watermark_bits,
-        "arnold_iterations": actual_iterations
+        "arnold_iterations": actual_iterations,
+        "is_text":           is_text
     }

@@ -258,8 +258,8 @@ def embed_watermark():
         actual_iters = result.get("arnold_iterations", 0)
 
         table = Table(title="Embedding Results", show_header=True)
-        table.add_column("Metric",  style="cyan")
-        table.add_column("Value",   style="green")
+        table.add_column("Metric",  style="cyan", no_wrap=True)
+        table.add_column("Value",   style="green", overflow="fold")
         table.add_row("Output file",     str(output))
         table.add_row("Bits embedded",   f"{n_bits} / {capacity}")
         table.add_row("Alpha (strength)",f"{ALPHA}")
@@ -267,12 +267,18 @@ def embed_watermark():
         console.print(table)
 
         # Extraction Key Summary Panel
-        wm_rows, wm_cols = result["watermark_shape"]
+        wm_rows_embed, wm_cols_embed = result["watermark_shape"]
+        wm_rows_orig,  wm_cols_orig  = result.get("original_shape", result["watermark_shape"])
+        
         summary_text = Text()
         summary_text.append("\n[!] SAVE THIS FOR EXTRACTION [!]\n", style="bold yellow")
-        summary_text.append(f"Bit Count  : {n_bits}\n", style="cyan")
-        summary_text.append(f"Grid Shape : {{row: {wm_rows}, col: {wm_cols}}}\n", style="cyan")
-        summary_text.append(f"Arnold Key : {actual_iters}", style="cyan")
+        summary_text.append(f"Bit Count      : {n_bits}\n", style="cyan")
+        summary_text.append(f"Embedded Shape : {{row: {wm_rows_embed}, col: {wm_cols_embed}}}\n", style="cyan")
+        summary_text.append(f"Original Shape : {{row: {wm_rows_orig}, col: {wm_cols_orig}}}\n", style="cyan")
+        summary_text.append(f"Arnold Key     : {actual_iters}", style="cyan")
+        
+        if result.get("is_text", False):
+            summary_text.append(f"\n\n[dim]Text watermark saved as image to:\nassets/watermarks/generated_watermark.png[/dim]")
         
         console.print(Panel(summary_text, title="Extraction Key", border_style="yellow"))
 
@@ -357,7 +363,14 @@ def apply_attack():
             output_extension = ".png"
         output_path = ATTACK_RESULTS_DIR / f"attacked_{attack_name}_{source_name}{output_extension}"
         cv2.imwrite(str(output_path), attacked_image)
-        console.print(f"[green]OK Attack applied and saved to {output_path}[/green]\n")
+        
+        # Display Results Table
+        table = Table(title="Attack Results", show_header=True)
+        table.add_column("Metric", style="cyan", no_wrap=True)
+        table.add_column("Value", style="green", overflow="fold")
+        table.add_row("Attack Applied", selected_attack["name"])
+        table.add_row("Output file", str(output_path))
+        console.print(table)
     except Exception as e:
         console.print(f"[bold red]X Error applying attack: {e}[/bold red]\n")
     
@@ -394,10 +407,7 @@ def extract_watermark_cli():
 
     # Get embedding parameters
     n_bits = int(ask_value("Number of watermark bits", default="100"))
-    wm_rows = int(ask_value("Watermark grid rows", default="10"))
-    wm_cols = int(ask_value("Watermark grid cols", default="10"))
-    alpha_val = float(ask_value("Alpha (embedding strength)", default=str(ALPHA)))
-
+    
     arnold_use = select_from_menu(
         "Arnold Descrambling",
         [
@@ -407,8 +417,21 @@ def extract_watermark_cli():
     )
 
     arnold_iters = 0
+    wm_rows_orig, wm_cols_orig = 0, 0
     if arnold_use == "yes":
         arnold_iters = int(ask_value("Arnold iterations", default="5"))
+        # Ask for both shapes
+        console.print("[dim]Enter the 'Embedded Shape' from your extraction key:[/dim]")
+        embed_rows = int(ask_value("Embedded rows", default="32"))
+        embed_cols = int(ask_value("Embedded cols", default="32"))
+        wm_rows_embed, wm_cols_embed = embed_rows, embed_cols
+        
+        console.print("[dim]Enter the 'Original Shape' from your extraction key:[/dim]")
+        wm_rows_orig = int(ask_value("Original rows", default="10"))
+        wm_cols_orig = int(ask_value("Original cols", default="10"))
+    else:
+        wm_rows_embed = int(ask_value("Watermark grid rows", default="10"))
+        wm_cols_embed = int(ask_value("Watermark grid cols", default="10"))
 
     # Build output path
     EXTRACTED_ATTACKED_WATERMARKS_DIR.mkdir(parents=True, exist_ok=True)
@@ -417,22 +440,27 @@ def extract_watermark_cli():
 
     console.print("\n[cyan]Running watermark extraction…[/cyan]")
     try:
-        watermark_shape = (wm_rows, wm_cols)
+        watermark_shape = (wm_rows_embed, wm_cols_embed)
+        original_shape = (wm_rows_orig, wm_cols_orig) if arnold_use == "yes" else None
+        
         result = run_extraction_pipeline(
             image_path=str(image_path),
             n_bits=n_bits,
             watermark_shape=watermark_shape,
-            alpha=alpha_val,
+            alpha=ALPHA,
             arnold_iterations=arnold_iters,
+            grid_shape=watermark_shape if arnold_use == "yes" else None,
+            original_length=wm_rows_orig * wm_cols_orig if arnold_use == "yes" else None,
             output_path=str(output),
+            original_shape=original_shape if arnold_use == "yes" else None,
         )
 
         table = Table(title="Extraction Results", show_header=True)
-        table.add_column("Metric", style="cyan")
-        table.add_column("Value", style="green")
+        table.add_column("Metric", style="cyan", no_wrap=True)
+        table.add_column("Value", style="green", overflow="fold")
         table.add_row("Output file", str(output))
         table.add_row("Bits extracted", str(result["n_bits_extracted"]))
-        table.add_row("Watermark shape", f"{watermark_shape}")
+        table.add_row("Extraction shape", f"{watermark_shape}")
         table.add_row("Arnold descrambled", "Yes" if result["arnold_descrambled"] else "No")
         console.print(table)
     except Exception as e:
@@ -454,8 +482,8 @@ def evaluate_watermark():
         clear_screen()
         render_shell("Evaluate Watermark", "Computed robustness metrics")
         results_table = Table(title="Evaluation Results", show_header=True)
-        results_table.add_column("Metric", style="cyan")
-        results_table.add_column("Value", style="green")
+        results_table.add_column("Metric", style="cyan", no_wrap=True)
+        results_table.add_column("Value", style="green", overflow="fold")
         
         if choice == "1":  # PSNR
             original_path = select_image_from_directory(

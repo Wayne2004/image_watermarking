@@ -122,19 +122,10 @@ def descramble_watermark(
     grid_shape: tuple = None,
     original_length: int = None,
     padding: int = 0,
+    original_shape: tuple = None,
 ) -> np.ndarray:
     """
     Apply Inverse Arnold Transform to descramble an extracted watermark.
-
-    Two modes of operation:
-
-    1. If grid_shape is provided: the watermark is treated as a 1-D bit
-       array that was scrambled via arnold_scramble_bits().  It is
-       reshaped, descrambled, and trimmed.
-
-    2. If grid_shape is None: the watermark is treated as a 2-D image
-       that was directly scrambled via arnold_transform().  The image
-       must be square.
 
     Parameters
     ----------
@@ -143,6 +134,7 @@ def descramble_watermark(
     grid_shape          : tuple (side, side) or None
     original_length     : int  original bit count (for trimming padding)
     padding             : int  number of padding bits to remove
+    original_shape      : tuple (rows, cols) of the target rectangle
 
     Returns
     -------
@@ -154,13 +146,23 @@ def descramble_watermark(
         descrambled = arnold_descramble_bits(
             bits, grid_shape, iterations, original_length, padding
         )
-        # Reshape back to the inferred 2-D shape
-        if original_length is not None:
+        
+        # Determine the final shape
+        if original_shape is not None:
+            # Use specific rectangular shape (Role C request)
+            rows, cols = original_shape
+            n = rows * cols
+        elif original_length is not None:
+            # Infer square-ish shape from length
             n = original_length
+            rows = int(math.ceil(math.sqrt(n)))
+            cols = int(math.ceil(n / rows))
         else:
+            # Use the full descrambled length
             n = len(descrambled)
-        rows = int(math.ceil(math.sqrt(n)))
-        cols = int(math.ceil(n / rows))
+            rows = int(math.ceil(math.sqrt(n)))
+            cols = int(math.ceil(n / rows))
+            
         return (descrambled[:n].reshape((rows, cols)) * 255).astype(np.uint8)
     else:
         # 2-D image mode (must be square)
@@ -190,6 +192,7 @@ def extract_watermark_robust(
     grid_shape: tuple = None,
     original_length: int = None,
     padding: int = 0,
+    original_shape: tuple = None,
 ) -> np.ndarray:
     """
     Extract watermark from a watermarked (possibly attacked) image.
@@ -212,6 +215,7 @@ def extract_watermark_robust(
     grid_shape        : tuple (side, side) for Arnold descrambling
     original_length   : int  original bit count (for Arnold padding trim)
     padding           : int  Arnold padding count
+    original_shape    : tuple (rows, cols) of the target rectangle
 
     Returns
     -------
@@ -250,7 +254,7 @@ def extract_watermark_robust(
     # ── Arnold descrambling (if used during embedding) ───────────
     if arnold_iterations > 0:
         extracted = descramble_watermark(
-            extracted, arnold_iterations, grid_shape, original_length, padding
+            extracted, arnold_iterations, grid_shape, original_length, padding, original_shape
         )
 
     return extracted
@@ -336,6 +340,7 @@ def run_extraction_pipeline(
     original_length: int = None,
     padding: int = 0,
     output_path: str = None,
+    original_shape: tuple = None,
 ) -> dict:
     """
     End-to-end watermark extraction pipeline (Module 3).
@@ -354,6 +359,7 @@ def run_extraction_pipeline(
     original_length   : int  original bit count
     padding           : int  Arnold padding count
     output_path       : str  where to save the extracted watermark
+    original_shape    : tuple (rows, cols) of the target rectangle
 
     Returns
     -------
@@ -378,7 +384,7 @@ def run_extraction_pipeline(
     # Extract
     extracted = extract_watermark_robust(
         image, n_bits, watermark_shape, alpha,
-        arnold_iterations, grid_shape, original_length, padding
+        arnold_iterations, grid_shape, original_length, padding, original_shape
     )
 
     # Save

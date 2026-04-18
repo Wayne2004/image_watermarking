@@ -7,6 +7,7 @@ from .evaluation import (
     calculate_psnr,
     calculate_ssim,
     calculate_ber,
+    calculate_ncc,
     evaluate_watermark_robustness
 )
 
@@ -14,5 +15,6 @@ __all__ = [
     'calculate_psnr',
     'calculate_ssim',
     'calculate_ber',
+    'calculate_ncc',
     'evaluate_watermark_robustness'
 ]

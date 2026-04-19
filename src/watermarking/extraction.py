@@ -37,7 +37,7 @@ from .watermarking import (
     preprocess_image,
     apply_dwt,
     apply_dct_blocks,
-    _extract_bits_from_band,
+    _extract_soft_from_band,
     BLOCK_SIZE,
     ALPHA,
 )
@@ -86,18 +86,14 @@ def extract_watermark_raw(
     dct_LH = apply_dct_blocks(LH)
     dct_HL = apply_dct_blocks(HL)
 
-    # Extract bits from both sub-bands
-    bits_LH = _extract_bits_from_band(dct_LH, n_bits, alpha)
-    bits_HL = _extract_bits_from_band(dct_HL, n_bits, alpha)
-
-    # Innovation II: majority vote between LH and HL
-    # Agree → use agreed value.  Disagree → fall back to LH (tie-break).
-    min_len = min(len(bits_LH), len(bits_HL))
-    voted_bits = np.where(
-        bits_LH[:min_len] == bits_HL[:min_len],
-        bits_LH[:min_len],
-        bits_LH[:min_len]   # tie-break: LH wins
-    )
+    # Innovation II: soft majority vote — average QIM remainders from both
+    # sub-bands before thresholding.  When LH and HL agree the signal adds;
+    # when they conflict the soft average can still land on the correct side.
+    scores_LH = _extract_soft_from_band(dct_LH, n_bits, alpha)
+    scores_HL = _extract_soft_from_band(dct_HL, n_bits, alpha)
+    min_len    = min(len(scores_LH), len(scores_HL))
+    avg_scores = (scores_LH[:min_len] + scores_HL[:min_len]) / 2.0
+    voted_bits = (avg_scores >= 0).astype(np.uint8)
 
     # Pad if short, reshape to 2-D
     target_size = watermark_shape[0] * watermark_shape[1]

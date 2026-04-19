@@ -278,7 +278,7 @@ def embed_watermark():
         summary_text.append(f"Arnold Key     : {actual_iters}", style="cyan")
         
         if result.get("is_text", False):
-            summary_text.append(f"\n\n[dim]Text watermark saved as image to:\nassets/watermarks/generated_watermark.png[/dim]")
+            summary_text.append(f"\n\n[dim]Text watermark saved as image to:\n{WATERMARKS_DIR / 'generated_watermark.png'}[/dim]")
         
         console.print(Panel(summary_text, title="Extraction Key", border_style="yellow"))
 

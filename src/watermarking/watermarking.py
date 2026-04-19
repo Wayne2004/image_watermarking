@@ -70,6 +70,9 @@ from .arnold import (
     arnold_scramble_bits,
 )
 
+# Project root: src/watermarking/ → src/ → project root
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
 # ─────────────────────────────────────────────────────────────────
 # CONSTANTS
 # ─────────────────────────────────────────────────────────────────
@@ -210,7 +213,7 @@ def prepare_watermark(watermark_input, embed_capacity: int) -> tuple:
             wm = np.array(img_pil)
             
             # Save the generated watermark for inspection (Role C requirement)
-            gen_path = Path("assets/watermarks/generated_watermark.png")
+            gen_path = _PROJECT_ROOT / "assets" / "watermarks" / "generated_watermark.png"
             gen_path.parent.mkdir(parents=True, exist_ok=True)
             cv2.imwrite(str(gen_path), wm)
             print(f"[prepare_watermark] Generated tight text watermark ({wm.shape[1]}x{wm.shape[0]}) saved to {gen_path}")
@@ -308,6 +311,8 @@ def _compute_adaptive_alpha(dct_block: np.ndarray, alpha_base: float) -> float:
     Formula
     ───────
         mid_energy  = mean of |coeff| over a 3×3 mid-freq window
+                      (target coeff excluded so alpha is stable across
+                       embed/extract — embedding modifies that position)
         alpha_local = alpha_base * (1 + HVS_GAIN * mid_energy)
 
     Parameters
@@ -320,10 +325,13 @@ def _compute_adaptive_alpha(dct_block: np.ndarray, alpha_base: float) -> float:
     float  block-local embedding strength
     """
     # 3×3 mid-frequency window centred on (EMBED_U, EMBED_V)
-    u0, v0   = EMBED_U - 1, EMBED_V - 1
-    u1, v1   = EMBED_U + 2, EMBED_V + 2
-    mid_window = dct_block[u0:u1, v0:v1]
-    mid_energy = float(np.mean(np.abs(mid_window)))
+    u0, v0     = EMBED_U - 1, EMBED_V - 1
+    u1, v1     = EMBED_U + 2, EMBED_V + 2
+    mid_window = dct_block[u0:u1, v0:v1].copy()
+    # Exclude the target coefficient: embedding modifies it, so including
+    # it would make alpha differ between embed-time and extract-time.
+    mid_window[EMBED_U - u0, EMBED_V - v0] = 0.0
+    mid_energy  = float(np.mean(np.abs(mid_window)))
     alpha_local = alpha_base * (1.0 + HVS_GAIN * mid_energy)
     return alpha_local
 
@@ -442,6 +450,39 @@ def _extract_bits_from_band(dct_band: np.ndarray, n_bits: int,
     return np.array(bits, dtype=np.uint8)
 
 
+def _extract_soft_from_band(dct_band: np.ndarray, n_bits: int,
+                             alpha_base: float) -> np.ndarray:
+    """
+    Return raw QIM remainder values (float) instead of hard 0/1 bits.
+    Positive remainder → bit=1, negative → bit=0.
+    Used by extract_watermark_raw for soft dual-band majority voting.
+    """
+    h, w         = dct_band.shape
+    n_blocks_row = h // BLOCK_SIZE
+    n_blocks_col = w // BLOCK_SIZE
+    scores  = []
+    bit_idx = 0
+
+    for row in range(n_blocks_row):
+        for col in range(n_blocks_col):
+            if bit_idx >= n_bits:
+                break
+            br    = row * BLOCK_SIZE
+            bc    = col * BLOCK_SIZE
+            block = dct_band[br:br+BLOCK_SIZE, bc:bc+BLOCK_SIZE]
+
+            alpha_local = _compute_adaptive_alpha(block, alpha_base)
+            coeff     = dct_band[br+EMBED_U, bc+EMBED_V]
+            magnitude = abs(coeff)
+            quantised = round(magnitude / alpha_local) * alpha_local
+            scores.append(magnitude - quantised)
+            bit_idx += 1
+        if bit_idx >= n_bits:
+            break
+
+    return np.array(scores, dtype=np.float64)
+
+
 # ─── Public embedding function ────────────────────────────────────
 
 def embed_watermark(
@@ -469,7 +510,7 @@ def embed_watermark(
         watermark_shape – (rows, cols) needed by extractor
     """
     # ── Step 1: DWT decomposition ──────────────────────────────
-    coeffs, LL, LH, HL, HH = apply_dwt(Y_norm)
+    coeffs, LL, LH, HL, HH = apply_dwt(Y_norm)  # LL/HH used in IDWT below
 
     # ── Step 2: Embedding capacity (based on LH) ───────────────
     h_band, w_band = LH.shape
@@ -572,22 +613,19 @@ def extract_watermark(
     Y_norm, _, _, _ = preprocess_image(watermarked_image)
 
     # DWT
-    _, LL, LH, HL, HH = apply_dwt(Y_norm)
+    _, _, LH, HL, _ = apply_dwt(Y_norm)
 
     # DCT on both sub-bands
     dct_LH = apply_dct_blocks(LH)
     dct_HL = apply_dct_blocks(HL)
 
-    # Extract from both sub-bands
-    bits_LH = _extract_bits_from_band(dct_LH, n_bits, alpha)
-    bits_HL = _extract_bits_from_band(dct_HL, n_bits, alpha)
-
-    # Innovation II: majority vote (LH + HL)
-    # Agree → use agreed value.  Disagree → fall back to LH.
-    min_len    = min(len(bits_LH), len(bits_HL))
-    voted_bits = np.where(bits_LH[:min_len] == bits_HL[:min_len],
-                          bits_LH[:min_len],
-                          bits_LH[:min_len])   # tie-break: LH wins
+    # Innovation II: soft majority vote — average QIM remainders from both
+    # sub-bands before thresholding (matches the logic in extraction.py).
+    scores_LH  = _extract_soft_from_band(dct_LH, n_bits, alpha)
+    scores_HL  = _extract_soft_from_band(dct_HL, n_bits, alpha)
+    min_len    = min(len(scores_LH), len(scores_HL))
+    avg_scores = (scores_LH[:min_len] + scores_HL[:min_len]) / 2.0
+    voted_bits = (avg_scores >= 0).astype(np.uint8)
 
     # Pad if short, reshape
     target_size = watermark_shape[0] * watermark_shape[1]
@@ -666,7 +704,7 @@ def run_embedding_pipeline(
     Y_norm, Cb, Cr, _  = preprocess_image(original)
 
     # Capacity from LH sub-band
-    _, LL, LH, HL, HH = apply_dwt(Y_norm)
+    _, _, LH, _, _ = apply_dwt(Y_norm)
     h_band, w_band     = LH.shape
     capacity           = (h_band // BLOCK_SIZE) * (w_band // BLOCK_SIZE)
     print(f"[Module 1] Embedding capacity = {capacity} bits")
@@ -686,7 +724,7 @@ def run_embedding_pipeline(
     if arnold_iterations > 0:
         print(f"[Module 1] Applying Arnold Scrambling ({arnold_iterations} iterations)...")
         # Role C: Reverted to compact square padding
-        watermark_bits, grid_shape, padding = arnold_scramble_bits(watermark_bits, iterations=arnold_iterations)
+        watermark_bits, grid_shape, _ = arnold_scramble_bits(watermark_bits, iterations=arnold_iterations)
 
         # Check if the PADDED bits still fit in the capacity
         if len(watermark_bits) > capacity:
@@ -695,7 +733,7 @@ def run_embedding_pipeline(
              # Re-prepare with extra breathing room for the square padding
              safe_capacity = int(math.floor(math.sqrt(capacity))**2)
              watermark_bits, watermark_shape_orig = prepare_watermark(watermark_input, safe_capacity)
-             watermark_bits, grid_shape, padding = arnold_scramble_bits(watermark_bits, iterations=arnold_iterations)
+             watermark_bits, grid_shape, _ = arnold_scramble_bits(watermark_bits, iterations=arnold_iterations)
 
         actual_iterations = arnold_iterations
         wm_shape_embedded = grid_shape
@@ -704,7 +742,7 @@ def run_embedding_pipeline(
         # Save scrambled watermark for inspection
         scrambled_grid = watermark_bits.reshape(grid_shape)
         scrambled_img  = (scrambled_grid * 255).astype(np.uint8)
-        arnold_path    = Path("assets/watermarks/generated_arnold_watermark.png")
+        arnold_path    = _PROJECT_ROOT / "assets" / "watermarks" / "generated_arnold_watermark.png"
         arnold_path.parent.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(arnold_path), scrambled_img)
 

@@ -422,16 +422,16 @@ def extract_watermark_cli():
         arnold_iters = int(ask_value("Arnold iterations", default="5"))
         # Ask for both shapes
         console.print("[dim]Enter the 'Embedded Shape' from your extraction key:[/dim]")
-        embed_rows = int(ask_value("Embedded rows", default="32"))
-        embed_cols = int(ask_value("Embedded cols", default="32"))
+        embed_rows = int(ask_value("Embedded rows"))
+        embed_cols = int(ask_value("Embedded cols"))
         wm_rows_embed, wm_cols_embed = embed_rows, embed_cols
         
         console.print("[dim]Enter the 'Original Shape' from your extraction key:[/dim]")
-        wm_rows_orig = int(ask_value("Original rows", default="10"))
-        wm_cols_orig = int(ask_value("Original cols", default="10"))
+        wm_rows_orig = int(ask_value("Original rows"))
+        wm_cols_orig = int(ask_value("Original cols"))
     else:
-        wm_rows_embed = int(ask_value("Watermark grid rows", default="10"))
-        wm_cols_embed = int(ask_value("Watermark grid cols", default="10"))
+        wm_rows_embed = int(ask_value("Watermark grid rows"))
+        wm_cols_embed = int(ask_value("Watermark grid cols"))
 
     # Build output path
     EXTRACTED_ATTACKED_WATERMARKS_DIR.mkdir(parents=True, exist_ok=True)

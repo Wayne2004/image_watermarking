@@ -253,6 +253,10 @@ def extract_watermark_robust(
             extracted, arnold_iterations, grid_shape, original_length, padding, original_shape
         )
 
+    # Make sure that bit array has been de-binarized
+    if np.unique(extracted).tolist() not in ([0,255],):  # True if only 0 and 1
+        extracted = (extracted * 255).astype(np.uint8)
+
     return extracted
 
 

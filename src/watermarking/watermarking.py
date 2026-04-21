@@ -219,6 +219,8 @@ def prepare_watermark(watermark_input, embed_capacity: int) -> tuple:
             print(f"[prepare_watermark] Generated tight text watermark ({wm.shape[1]}x{wm.shape[0]}) saved to {gen_path}")
         else:
             wm = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+            written = cv2.imwrite('/tmp/test2.png', wm)
+            print('written test2.png:',written)
             if wm is None:
                 raise ValueError(f"Could not read watermark: {watermark_input}")
     else:
@@ -227,6 +229,8 @@ def prepare_watermark(watermark_input, embed_capacity: int) -> tuple:
             wm = cv2.cvtColor(wm, cv2.COLOR_BGR2GRAY)
 
     _, wm_bin = cv2.threshold(wm, 128, 1, cv2.THRESH_BINARY)
+    written = cv2.imwrite('/tmp/test3.png', wm_bin)
+    print('written test3.png:',written)
 
     total = wm_bin.shape[0] * wm_bin.shape[1]
     if total > embed_capacity:

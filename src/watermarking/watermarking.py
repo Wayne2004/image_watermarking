@@ -174,10 +174,13 @@ def _embed_bit_into_band(dct_band: np.ndarray, watermark_bits: np.ndarray, alpha
 
 def _extract_soft_from_band(dct_band: np.ndarray, n_bits: int, alpha_base: float) -> np.ndarray:
     """
-    Differential Extraction: Returns the difference between the two coefficients.
+    Differential Extraction: Uses hard-voting (Sign-based).
+    Every block gets exactly one 'vote' (+1 or -1).
+    This ensures Gaussian noise in one block can't overwhelm others.
     """
     h, w = dct_band.shape
     n_blocks_row, n_blocks_col = h // BLOCK_SIZE, w // BLOCK_SIZE
+    # scores will now store the sum of 'votes'
     scores = np.zeros(n_bits, dtype=np.float64)
     
     count = 0
@@ -187,8 +190,9 @@ def _extract_soft_from_band(dct_band: np.ndarray, n_bits: int, alpha_base: float
             v1 = dct_band[br+COEFF_A[0], bc+COEFF_A[1]]
             v2 = dct_band[br+COEFF_B[0], bc+COEFF_B[1]]
             
-            # Score is the relative difference
-            scores[count % n_bits] += (v1 - v2)
+            # Vote +1 if v1 > v2, else -1
+            vote = 1.0 if v1 > v2 else -1.0
+            scores[count % n_bits] += vote
             count += 1
     return scores
 

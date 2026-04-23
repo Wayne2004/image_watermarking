@@ -33,7 +33,7 @@ def extract_watermark_raw(
     alpha: float = ALPHA,
 ) -> np.ndarray:
     """
-    Core extraction using Differential Differential logic.
+    Core extraction using Differential Consensus logic.
     """
     # Preprocess
     Y_norm, _, _, _ = preprocess_image(watermarked_image)
@@ -45,11 +45,12 @@ def extract_watermark_raw(
     dct_LH = apply_dct_blocks(LH)
     dct_HL = apply_dct_blocks(HL)
 
-    # 1. Extract soft difference scores
+    # 1. Extract vote scores (-N to +N)
     s_lh = _extract_soft_from_band(dct_LH, n_bits, alpha)
     s_hl = _extract_soft_from_band(dct_HL, n_bits, alpha)
     
-    # 2. Consensus: Aggregate differences from both sub-bands
+    # 2. Consensus: Sum of votes from both sub-bands
+    # If the sum is positive, the majority of blocks across both bands said '1'
     voted_bits = ((s_lh + s_hl) >= 0).astype(np.uint8)
 
     # 3. Reshape back to logo

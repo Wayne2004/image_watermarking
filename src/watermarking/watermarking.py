@@ -66,6 +66,9 @@ def preprocess_image(image: np.ndarray) -> tuple:
     return Y_norm, Cb, Cr, ycbcr
 
 def prepare_watermark(watermark_input, embed_capacity: int) -> tuple:
+    """
+    Prepare a watermark for embedding and save a reference baseline.
+    """
     if isinstance(watermark_input, (str, Path)):
         path = Path(str(watermark_input))
         if not path.exists():
@@ -83,22 +86,34 @@ def prepare_watermark(watermark_input, embed_capacity: int) -> tuple:
             draw = PILDraw.Draw(img_pil)
             draw.text((2, 2), str(watermark_input), font=font, fill=255)
             wm = np.array(img_pil)
-            gen_path = Path("assets/watermarks/generated_watermark.png")
-            gen_path.parent.mkdir(parents=True, exist_ok=True)
-            cv2.imwrite(str(gen_path), wm)
         else:
             wm = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+            if wm is None:
+                raise ValueError(f"Could not read watermark image: {watermark_input}")
     else:
         wm = watermark_input
         if len(wm.shape) == 3:
             wm = cv2.cvtColor(wm, cv2.COLOR_BGR2GRAY)
 
+    # Initial binarization
     _, wm_bin = cv2.threshold(wm, 128, 1, cv2.THRESH_BINARY)
+    
+    # Resize to fit capacity if necessary
     total = wm_bin.shape[0] * wm_bin.shape[1]
     if total > embed_capacity:
         scale = math.sqrt(embed_capacity / total)
         nh, nw = max(1, int(wm_bin.shape[0]*scale)), max(1, int(wm_bin.shape[1]*scale))
-        wm_bin = cv2.resize(wm_bin, (nw, nh), interpolation=cv2.INTER_NEAREST)
+        # Use INTER_AREA for structural integrity during shrinking
+        wm_bin = cv2.resize(wm_bin, (nw, nh), interpolation=cv2.INTER_AREA)
+        _, wm_bin = cv2.threshold(wm_bin, 0.5, 1, cv2.THRESH_BINARY)
+
+    # Role C Fix: Save the "Gold Standard" reference for evaluation
+    # This matches the pixel-grid of the extraction exactly.
+    ref_img = (wm_bin * 255).astype(np.uint8)
+    ref_path = Path("assets/watermarks/reference_baseline.png")
+    ref_path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(ref_path), ref_img)
+    print(f"[prepare_watermark] Reference baseline saved to {ref_path}")
     
     return wm_bin.flatten().astype(np.uint8), wm_bin.shape
 

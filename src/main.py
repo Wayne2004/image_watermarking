@@ -66,11 +66,10 @@ SELECT_STYLE = Style(
 
 ATTACK_METHODS = {
     "1": {"name": "JPEG Compression", "func": jpeg_compression},
-    "2": {"name": "Gaussian Noise", "func": gaussian_noise},
-    "3": {"name": "Blurring", "func": blurring},
-    "4": {"name": "Cropping", "func": cropping},
-    "5": {"name": "Scaling", "func": scaling},
+    "2": {"name": "Gaussian Noise",   "func": gaussian_noise},
+    "3": {"name": "Blurring",         "func": blurring},
 }
+
 
 EVALUATION_METHODS = {
     "1": "PSNR (Peak Signal-to-Noise Ratio)",

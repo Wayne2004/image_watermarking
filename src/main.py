@@ -405,7 +405,7 @@ def extract_watermark_cli():
         return
 
     # Get embedding parameters
-    n_bits = int(ask_value("Number of watermark bits", default="100"))
+    n_bits = int(ask_value("Number of watermark bits"))
     
     arnold_use = select_from_menu(
         "Arnold Descrambling",
@@ -543,7 +543,7 @@ def evaluate_watermark():
         elif choice == "3":  # BER
             original_watermark_path = select_image_from_directory(
                 WATERMARKS_DIR,
-                "Choose Original Watermark (assets/watermarks)",
+                "Choose Original Watermark (assets/watermarks/reference_baseline.png)",
             )
             if not original_watermark_path:
                 return
@@ -574,7 +574,7 @@ def evaluate_watermark():
         elif choice == "4":  # NCC
             original_watermark_path = select_image_from_directory(
                 WATERMARKS_DIR,
-                "Choose Original Watermark (assets/watermarks)",
+                "Choose Original Watermark (assets/watermarks/reference_baseline.png)",
             )
             if not original_watermark_path:
                 return

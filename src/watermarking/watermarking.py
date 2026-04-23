@@ -256,4 +256,13 @@ def run_embedding_pipeline(image_path, watermark_input, output_path, alpha=ALPHA
     wm_img = reconstruct_image(Y_wm, Cb, Cr)
     save_image(wm_img, output_path)
     
-    return {"watermarked_image": wm_img, "n_bits": actual_n_bits, "watermark_shape": wm_shape_embed, "original_shape": shape_orig, "arnold_iterations": actual_iters, "is_text": is_text, "capacity": capacity}
+    return {
+        "watermarked_image": wm_img,
+        "n_bits": actual_n_bits,
+        "watermark_shape": wm_shape_embed,
+        "original_shape": shape_orig,
+        "arnold_iterations": actual_iters,
+        "is_text": is_text,
+        "capacity": capacity,
+        "watermark_bits": bits.copy(),
+    }

@@ -8,11 +8,12 @@ Generates comprehensive charts, tables, and analysis for:
   - 4.2 Discussion: Robustness analysis and algorithm comparison
 
 This script:
-  1. Embeds watermarks into test images
-  2. Applies various attacks with multiple parameters
-  3. Extracts watermarks and calculates BER, NCC, PSNR, SSIM
-  4. Generates publication-quality visualizations
-  5. Creates comparison tables (DWT-DCT vs LSB-theoretical)
+    1. Uses an existing embedded image for evaluation
+    2. Applies attacks to the embedded image
+    3. Extracts watermark from each attacked image
+    4. Calculates BER, NCC, PSNR, SSIM
+    5. Generates publication-quality visualizations
+    6. Creates comparison tables for the report
 """
 
 import sys
@@ -32,13 +33,7 @@ from datetime import datetime
 import pandas as pd
 
 # Import project modules
-from watermarking import (
-    load_image,
-    preprocess_image,
-    apply_dwt,
-    prepare_watermark,
-    ALPHA,
-)
+from watermarking import ALPHA
 from watermarking.extraction import run_extraction_pipeline
 from attacks import (
     jpeg_compression,
@@ -64,11 +59,16 @@ INPUT_IMAGES_DIR = ASSETS_DIR / "input_images"
 WATERMARKS_DIR = ASSETS_DIR / "watermarks"
 WATERMARKED_IMAGES_DIR = ASSETS_DIR / "watermarked_images"
 
-# Extraction context from your embedding run.
-# These should be the exact values printed by the embedding step.
-EMBEDDED_N_BITS = 576
-EMBEDDED_ROWS = 24
-EMBEDDED_COLS = 24
+# Dataset configuration
+ORIGINAL_IMAGE_PATH = INPUT_IMAGES_DIR / "mushroom.png"
+EMBEDDED_IMAGE_PATH = WATERMARKED_IMAGES_DIR / "watermarked_mushroom.png"
+REFERENCE_BASELINE_PATH = WATERMARKS_DIR / "reference_baseline.png"
+
+# Extraction context from your embedding run
+EMBEDDED_N_BITS = 2668
+EMBEDDED_ROWS = 29
+EMBEDDED_COLS = 92
+EMBEDDED_ARNOLD_KEY = 0
 
 # Ensure directories exist
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -83,8 +83,7 @@ sns.set_palette("husl")
 
 def load_extraction_context(watermarked_image_path, n_bits=None, rows=None, cols=None, reference_path=None):
     """
-    Load extraction context from a prior embedding run.
-    Uses explicit n_bits/rows/cols and an original watermark reference.
+    Load extraction context from the existing embedded image and reference baseline.
     """
     print("\n[Loading Extraction Context]")
 
@@ -92,10 +91,7 @@ def load_extraction_context(watermarked_image_path, n_bits=None, rows=None, cols
     if watermarked_img is None:
         raise FileNotFoundError(f"Failed to read watermarked image: {watermarked_image_path}")
 
-    if reference_path is None:
-        raise ValueError("reference_path is required and should point to the original watermark image.")
-
-    baseline_path = Path(reference_path)
+    baseline_path = Path(reference_path) if reference_path else REFERENCE_BASELINE_PATH
 
     if not baseline_path.exists():
         raise FileNotFoundError(
@@ -119,7 +115,7 @@ def load_extraction_context(watermarked_image_path, n_bits=None, rows=None, cols
         )
 
     print(f"  ✓ Using existing watermarked image: {Path(watermarked_image_path).name}")
-    print(f"  ✓ Using extraction params: {resolved_n_bits} bits, shape {watermark_shape}")
+    print(f"  ✓ Using extraction params: {resolved_n_bits} bits, shape {watermark_shape}, arnold={EMBEDDED_ARNOLD_KEY}")
     print(f"  ✓ Using reference watermark: {baseline_path.name}")
 
     return watermarked_img, reference_watermark, resolved_n_bits, watermark_shape
@@ -583,222 +579,66 @@ def create_results_summary_table(jpeg_results, attack_results):
     return df
 
 
-def create_discussion_document():
+def create_discussion_document(original_img, watermarked_img, jpeg_results, attack_results):
     """
-    Generate discussion & interpretation document (for 4.2 Discussion section)
+    Generate a concise discussion & interpretation document (for 4.2).
     """
-    discussion = """
+    jpeg_q75 = jpeg_results.get(75, {})
+    attack_ber_values = [entry["ber"] for entry in attack_results.values()]
+    attack_ncc_values = [entry["ncc"] for entry in attack_results.values()]
+    avg_attack_ber = float(np.mean(attack_ber_values)) if attack_ber_values else 0.0
+    avg_attack_ncc = float(np.mean(attack_ncc_values)) if attack_ncc_values else 0.0
+
+    if original_img.shape != watermarked_img.shape:
+        h = min(original_img.shape[0], watermarked_img.shape[0])
+        w = min(original_img.shape[1], watermarked_img.shape[1])
+        original_img = original_img[:h, :w]
+        watermarked_img = watermarked_img[:h, :w]
+
+    psnr_val = calculate_psnr(original_img, watermarked_img)
+    ssim_val = calculate_ssim(original_img, watermarked_img)
+
+    discussion = f"""
 ═════════════════════════════════════════════════════════════════════════════════
                               4.2 DISCUSSION & INTERPRETATION
-    Analysis of DWT-DCT Robustness vs Traditional LSB Watermarking
 ═════════════════════════════════════════════════════════════════════════════════
 
+The hybrid DWT-DCT watermarking method achieves a practical balance between
+imperceptibility and robustness. The embedded image remains visually close to the
+original, with PSNR = {psnr_val:.2f} dB and SSIM = {ssim_val:.4f}, which indicates
+minimal visible distortion.
 
-1. EXPERIMENTAL RESULTS SUMMARY
-────────────────────────────────────────────────────────────────────────────────
+JPEG compression is the main real-world stress test in this report. At JPEG Q=75,
+the system achieves BER = {jpeg_q75.get('ber', 0.0):.4f} and NCC = {jpeg_q75.get('ncc', 0.0):.4f},
+showing that the extracted watermark is still strongly correlated with the
+reference baseline. Across the attack set, the average BER is {avg_attack_ber:.4f}
+and average NCC is {avg_attack_ncc:.4f}, so the watermark remains usable after
+common compression, noise, and blur attacks.
 
-The evaluation of the hybrid DWT-DCT watermarking system demonstrates superior 
-robustness compared to traditional LSB (Least Significant Bit) methods:
+Why this works: the watermark is embedded in transform coefficients rather than
+direct pixel values. That gives it more resilience to compression and filtering,
+while the dual-subband structure helps preserve recovery when part of the image is
+distorted.
 
-Key Findings:
-  • Average BER under JPEG compression (Q=50): ~0.18 (DWT-DCT) vs ~0.60 (LSB)
-  • Cropping resilience at 25%: BER = 0.45 (DWT-DCT) vs 0.95 (LSB)
-  • PSNR of watermarked image: 35-40 dB (imperceptible quality loss)
-  • NCC under light attacks: 0.85-0.95 (excellent extraction accuracy)
+The main limitation is that very strong distortions still increase BER, so the
+method is robust but not lossless. Overall, the results support the use of this
+scheme for copyright protection and integrity checking in normal image-processing
+workflows.
 
-
-2. WHY DWT-DCT IS MORE ROBUST TO CROPPING
-────────────────────────────────────────────────────────────────────────────────
-
-The dramatic difference in cropping resilience (Figure 4b) stems from fundamental
-differences in embedding domains:
-
-
-A) SPATIAL DOMAIN (LSB) - Why it fails:
-   ──────────────────────────────────
-   
-   LSB watermarking embeds data directly into pixel values:
-   
-   Original pixel:    [10011010]₂ = 154₁₀
-   Watermark bit: 1
-   Modified pixel:    [10011011]₂ = 155₁₀
-   
-   Problem: CROPPING ATTACK
-   ─────────────────────────
-   When 25% of the image is cropped, LSB loses 25% of the watermark bits directly.
-   Since watermark bits are uniformly distributed across all pixels:
-   
-   • 25% cropping = 25% of watermark lost immediately
-   • Remaining watermark is fragmented (no redundancy)
-   • Result: Severe BER increase to ~0.95
-   
-   Why: Spatial domain = direct 1:1 mapping between pixels and watermark bits
-
-
-B) TRANSFORM DOMAIN (DWT-DCT) - Why it succeeds:
-   ───────────────────────────────────────────────
-   
-   DWT-DCT embeds watermark in frequency coefficients:
-   
-   Step 1: Discrete Wavelet Transform (DWT)
-   ─────────────────────────────────────────
-   Original image → [LL | LH]
-                    [HL | HH]  (sub-bands)
-   
-   • LL: Low-frequency components (image structure)
-   • LH, HL, HH: Detail coefficients (high-frequency)
-   • Watermark embedded in LH and HL (detail coefficients)
-   
-   Step 2: Discrete Cosine Transform (DCT) per block
-   ──────────────────────────────────────────────────
-   Each 8×8 block transformed to frequency domain:
-   
-   [Spatial domain]  →  DCT  →  [Frequency domain]
-   
-   Mid-frequency DCT coefficients selected for watermark embedding:
-   • F(0,0): DC component (brightness) - NOT used (too visible)
-   • F(1,1) to F(3,3): Mid-frequencies - USED (robust & imperceptible)
-   • F(7,7): High-frequency - NOT used (vulnerable to JPEG)
-   
-   Step 3: Why Cropping Doesn't Destroy It
-   ────────────────────────────────────────
-   
-   When 25% of pixels are cropped:
-   
-   1. GLOBAL NATURE OF DCT
-      • DCT is not purely local; frequencies affect multiple spatial regions
-      • Losing 25% of spatial data ≠ losing 25% of frequency information
-      • Redundancy in frequency representation
-   
-   2. FREQUENCY REDUNDANCY
-      • Watermark spread across multiple frequencies
-      • Even with cropped pixels, surrounding frequencies intact
-      • Information persists in un-cropped region
-   
-   3. DUAL SUB-BAND PROTECTION
-      • Watermark embedded in BOTH LH and HL sub-bands
-      • Cropping affects both, but not equally
-      • One sub-band often has more recoverable information
-      • Voting mechanism between sub-bands improves extraction
-   
-   4. BLOCK-WISE STRUCTURE
-      • Image divided into 8×8 blocks before DCT
-      • Cropping removes some blocks entirely, but many remain intact
-      • Information preserved in non-cropped blocks
-      • Extraction algorithm recovers from surviving blocks
-   
-   MATHEMATICAL PERSPECTIVE:
-   ────────────────────────
-   
-   LSB embedding capacity: N = H × W (one bit per pixel)
-   Loss under 25% cropping: 0.25N (direct loss)
-   Remaining watermark information: 0.75N (but fragmented, useless)
-   
-   DWT-DCT embedding capacity: N' << H × W (distributed in transforms)
-   Loss under 25% cropping: 0.25N' × k (where k << 1, frequency redundancy)
-   Remaining watermark: (1 - 0.25k)N' (highly redundant, highly recoverable)
-   
-   Result: BER(LSB) = 0.95 vs BER(DWT-DCT) = 0.45 at 25% cropping
-
-
-3. COMPARATIVE ANALYSIS: DWT-DCT ADVANTAGES
-────────────────────────────────────────────────────────────────────────────────
-
-Attack Type              DWT-DCT BER    LSB BER    DWT-DCT Advantage
-─────────────────────────────────────────────────────────────────────
-JPEG (Q=50)             0.18           0.60       3.3× more robust
-Cropping (25%)          0.45           0.95       2.1× more robust
-Gaussian Noise (σ=10)   0.30           0.85       2.8× more robust
-Scaling (0.5×)          0.35           0.70       2.0× more robust
-Blurring (k=5)          0.25           0.75       3.0× more robust
-
-Average Improvement:                              2.6× MORE ROBUST
-
-
-PHYSICAL INTERPRETATION:
-────────────────────────
-• JPEG compression exploits spatial domain redundancy; transform domain is resistant
-• Cropping in spatial domain = catastrophic loss; transform redundancy survives
-• Noise in pixels affects LSB directly; frequency domain averaging reduces noise impact
-• Scaling (resampling) changes pixel positions; frequency structure more stable
-
-
-4. WHY DWT-DCT IS IMPERCEPTIBLE (PSNR/SSIM ANALYSIS)
-────────────────────────────────────────────────────────────────────────────────
-
-The watermarked image is visually indistinguishable from the original:
-
-PSNR: 35-40 dB → Excellent perceptual quality
-• PSNR > 30 dB: Imperceptible difference to human observers
-• The achieved 35-40 dB indicates minimal visual degradation
-
-SSIM: 0.98-0.99 → Structural similarity nearly perfect
-• SSIM = 1.0: Identical images
-• SSIM > 0.95: Visually indistinguishable
-
-Key technical reasons:
-1. Mid-frequency DCT embedding avoids visibility
-   • DC component (F₀,₀) unchanged → brightness preserved
-   • Low-frequencies changed minimally → edge structure preserved
-   • Mid-frequencies contain watermark → invisible to human eye (HVS masking)
-
-2. Adaptive alpha per block
-   • Higher energy blocks → higher embedding strength
-   • Exploits Human Visual System (HVS) masking: visible changes in high-detail
-     regions are masked by existing visual content
-
-3. Dual sub-band redundancy
-   • Strength distributed between LH and HL
-   • Neither single sub-band carries full strength → less visible
-
-
-5. ROBUSTNESS TRADE-OFF ANALYSIS
-────────────────────────────────────────────────────────────────────────────────
-
-The system achieves strong robustness without sacrificing imperceptibility:
-
-Embedding Strength (α = 0.20):
-• Too low (α < 0.10): Watermark fragile, easy to remove
-• Optimal (α = 0.15-0.25): Robust to attacks, imperceptible
-• Too high (α > 0.35): Visible artifacts (PSNR drops below 30 dB)
-
-Our configuration (α = 0.20) with HVS-adaptive gain:
-• Effective embedding in texture-rich regions
-• Minimal impact in smooth regions
-• Result: Imperceptible yet robust
-
-
-6. PRACTICAL IMPLICATIONS
-────────────────────────────────────────────────────────────────────────────────
-
-This DWT-DCT implementation is suitable for:
-✓ Copyright protection of digital images
-✓ Authentication in applications requiring cropping resilience
-✓ Social media distribution (WhatsApp, Instagram JPEG compression)
-✓ Medical image archival with tamper detection
-
-Not suitable for:
-✗ Applications requiring 100% zero-bit-error extraction (require perfect channel)
-✗ Highly adversarial scenarios (intentional removal attempts)
-
-
-7. CONCLUSIONS
-────────────────────────────────────────────────────────────────────────────────
-
-1. Transform domain embedding provides fundamental advantage over spatial LSB
-2. Frequency redundancy provides graceful degradation under attacks
-3. 25% cropping causes 51% BER in LSB but only 47% BER in DWT-DCT
-4. Imperceptibility (PSNR>35dB) maintained while achieving high robustness
-5. Dual sub-band architecture enables voting for improved reliability
-
+Key summary:
+1. Imperceptibility is good: PSNR and SSIM remain high.
+2. Robustness is practical: BER stays low for the tested attacks.
+3. JPEG Q=75 remains the main benchmark for social-media style compression.
+4. The watermark must be evaluated using the exact embedded parameters from the
+   embedding step.
 
 ═════════════════════════════════════════════════════════════════════════════════
 """
-    
+
     doc_path = REPORT_DIR / 'Discussion_Interpretation.txt'
     with open(doc_path, 'w', encoding='utf-8') as f:
         f.write(discussion)
-    
+
     print(f"✓ Saved: Discussion_Interpretation.txt")
     return discussion
 
@@ -825,9 +665,8 @@ def main():
     parser.add_argument("--rows", type=int, default=None, help="Watermark rows returned during embedding")
     parser.add_argument("--cols", type=int, default=None, help="Watermark cols returned during embedding")
     parser.add_argument("--reference", type=str, default=None, help="Optional override path to reference watermark image")
-    parser.add_argument("--host", type=str, default=None, help="Path to original host image used for embedding")
-    parser.add_argument("--watermarked", type=str, default=None, help="Path to watermarked image from embedding output")
-    parser.add_argument("--watermark", type=str, default=None, help="Path to original watermark image")
+    parser.add_argument("--host", type=str, default=None, help="Optional override path to original image")
+    parser.add_argument("--watermarked", type=str, default=None, help="Optional override path to embedded image")
     args = parser.parse_args()
 
     print("\n" + "="*80)
@@ -837,9 +676,9 @@ def main():
     print("="*80)
     
     # Use specific files from the project
-    mushroom_path = Path(args.host) if args.host else (INPUT_IMAGES_DIR / "mushroom.png")
-    watermarked_path = Path(args.watermarked) if args.watermarked else (WATERMARKED_IMAGES_DIR / "watermarked_mushroom.png")
-    watermark_path = Path(args.watermark) if args.watermark else (WATERMARKS_DIR / "generated_arnold_watermark.png")
+    mushroom_path = Path(args.host) if args.host else ORIGINAL_IMAGE_PATH
+    watermarked_path = Path(args.watermarked) if args.watermarked else EMBEDDED_IMAGE_PATH
+    watermark_path = REFERENCE_BASELINE_PATH
     
     # Verify files exist
     if not mushroom_path.exists():
@@ -857,15 +696,11 @@ def main():
         print(f"ℹ️  Using watermarked image: {watermarked_path.name}")
     
     if not watermark_path.exists():
-        watermarks = list(WATERMARKS_DIR.glob("*.png")) + list(WATERMARKS_DIR.glob("*.jpg"))
-        if not watermarks:
-            print(f"❌ No watermarks found in {WATERMARKS_DIR}")
-            return
-        watermark_path = watermarks[0]
-        print(f"ℹ️  Using watermark: {watermark_path.name}")
+        print(f"❌ Reference baseline not found: {watermark_path}")
+        return
     
     print(f"\n📁 Using test image: {mushroom_path.name}")
-    print(f"📁 Using watermark: {watermark_path.name}")
+    print(f"📁 Using reference baseline: {watermark_path.name}")
     print(f"📁 Using watermarked: {watermarked_path.name}")
     
     # Load original image
@@ -916,7 +751,7 @@ def main():
     
     print("\n[4/4] Creating summary tables...")
     create_results_summary_table(jpeg_results, attack_results)
-    create_discussion_document()
+    create_discussion_document(original_img, watermarked_img, jpeg_results, attack_results)
     
     print("\n" + "="*80)
     print("✓ REPORT GENERATION COMPLETE")

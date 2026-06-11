@@ -2,8 +2,10 @@
 opencv-python
 Pillow
 scikit-image
-rich-cli
+rich
 questionary
 PyWavelets
 seaborn
 pandas
+scipy
+matplotlib
